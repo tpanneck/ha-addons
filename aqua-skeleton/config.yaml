@@ -1,0 +1,18 @@
+# HA-Add-on-Manifest. Weil kein "image:" angegeben ist, BAUT der Supervisor
+# das Add-on lokal aus dem Dockerfile fuer die Architektur der Box.
+name: "Aqua Skeleton"
+version: "0.1.0"
+slug: "aqua_skeleton"
+description: "Minimales Test-Add-on (Babashka): Heartbeat + Ingress-Statusseite"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+# Ingress = eigene Web-UI in der HA-Sidebar, ohne offenen Port:
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:water-pump"
+# Schon jetzt gesetzt, damit Schritt 2 (HA-API) ohne Umbau geht.
+# Der Supervisor injiziert dann automatisch SUPERVISOR_TOKEN.
+homeassistant_api: true
