@@ -417,11 +417,38 @@
                          :t_damp (when (and h-tin h-tout (pos? (:amp h-tin))) (/ (:amp h-tout) (:amp h-tin)))
                          :t_lag  (when (and h-tin h-tout) (mod (- (:phase h-tin) (:phase h-tout)) 24.0))
                          :rh_damp (when (and h-rhin h-rhout (pos? (:amp h-rhin))) (/ (:amp h-rhout) (:amp h-rhin)))}]
-              {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate
+              {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate :a a :b b :g g
                :tau-daily tau-daily :damp damp :a-in a-in :a-out a-out :xcorr xcorr
                :acf-in acf-in :acf-out acf-out :daily daily
                :back (zipmap hrs back)})))))
     (catch Exception e (println "[aqua] thermal-model Fehler:" (.getMessage e)) nil)))
+
+(defn forecast-outdoor []
+  (let [u (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
+               "&hourly=temperature_2m,shortwave_radiation&past_days=0&forecast_days=6&timezone=UTC")
+        h (:hourly (om-get u))]
+    (when h
+      (->> (map (fn [ti te ra] (when (some? te) {:e (hour->epoch ti) :t_out te :solar (or ra 0.0)}))
+                (:time h) (:temperature_2m h) (:shortwave_radiation h))
+           (remove nil?) (sort-by :e) vec))))
+
+(defn forecast-series
+  "RC-Modell vorwaerts integriert ab der letzten Messung ueber den Open-Meteo-Forecast (max 5 Tage)."
+  [tm arch]
+  (when (and tm (:a tm))
+    (try
+      (let [{:keys [a b g]} tm
+            last-in (last (filter :t_in (archive->rows arch)))]
+        (when last-in
+          (let [e0 (:e last-in) t0 (double (:t_in last-in))
+                fut (take 120 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
+            (when (seq fut)
+              (loop [fs fut tprev t0 acc []]
+                (if (empty? fs) (reverse acc)
+                    (let [f (first fs)
+                          tn (+ tprev (* a (- (:t_out f) tprev)) (* b (:solar f)) g)]
+                      (recur (rest fs) tn (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})))))))))
+      (catch Exception e (println "[aqua] forecast Fehler:" (.getMessage e)) nil))))
 
 ;; ---------- State / Loop ----------
 (def state (atom {:status "startet..." :archive {} :model nil :series nil}))
@@ -451,6 +478,7 @@
         warch (if cutoff (into {} (filter #(when-let [e (hour->epoch (key %))] (>= e cutoff)) arch)) arch)
         s (attach-model rows nil)
         tm (thermal-model warch)
+        fc (forecast-series tm warch)
         in-eps (->> rows (filter :t_in) (map :e) sort)
         n-in (count in-eps)
         span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))
@@ -479,6 +507,7 @@
                           :a_in (:a-in tm) :a_out (:a-out tm) :xcorr (:xcorr tm)
                           :acf_in (:acf-in tm) :acf_out (:acf-out tm) :daily (:daily tm)})
        :corr corr
+       :forecast (when (seq fc) {:time (mapv :e fc) :t_in (mapv :t_in fc) :t_out (mapv :t_out fc)})
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
        :ha_debug @ha-debug :sensors @entities})))

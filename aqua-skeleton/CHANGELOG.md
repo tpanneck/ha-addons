@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.0
+- 5-Tage-Prognose der Innentemperatur: RC-Modell vorwaerts ueber den Open-Meteo-Forecast
+  integriert, im Temperatur-Chart als gepunktete Linie in die Zukunft.
+
 ## 0.9.0
 - Sektion 4 -> Tages-Analyse-Tabelle (harmonische Regression, 24 h): Amplitude+Phase je
   Groesse (T/RH innen/aussen), T-Daempfung + Lag, ohne willkuerlichen Detrend.
