@@ -26,6 +26,7 @@
 (def lat    (or (:latitude opts) 51.68))
 (def lon    (or (:longitude opts) 11.77))
 (def sensor (or (:sensor opts) "sensor.wohnzimmer_shelly_2_temperatur"))
+(def humidity-sensor (or (:humidity_sensor opts) "sensor.wohnzimmer_shelly_2_luftfeuchtigkeit"))
 (def history-days (int (or (:days opts) 14)))  ;; nur so viel Historie lesen, wie sinnvoll da ist
 (def c-mj-estimate (double (or (:c_mj opts) 290.0)))  ;; Speichermasse C [MJ/K] (physikal. Anker); W/K = C/tau
 
@@ -128,16 +129,18 @@
          (into {}))))
 
 (defn indoor-hourly
-  "Innentemperatur ueber HAs History mit start UND end_time (sonst nur 1-Tag-Fenster ab start!)
-   + aktueller /states-Wert. Fuellt nebenbei die Sensor-Liste (Discovery aus /states)."
+  "Innentemperatur + Innenfeuchte ueber HAs History (mit end_time!) + aktuelle /states-Werte.
+   Fuellt nebenbei die Sensor-Liste (Discovery aus /states). Gibt {:t_in map :rh_in map}."
   []
   (let [now (-> (java.time.Instant/now) (.truncatedTo java.time.temporal.ChronoUnit/SECONDS))
         start (.toString (.minusSeconds now (* history-days 86400)))
         end (.toString now)
-        p (hist-probe (str "/history/period/" start "?end_time=" end
-                           "&filter_entity_id=" sensor "&minimal_response"))
-        hist (states->hourly (:states p))
-        ;; /states: aktueller Wert + komplette Sensor-Liste
+        pt (hist-probe (str "/history/period/" start "?end_time=" end
+                            "&filter_entity_id=" sensor "&minimal_response"))
+        ph (hist-probe (str "/history/period/" start "?end_time=" end
+                            "&filter_entity_id=" humidity-sensor "&minimal_response"))
+        t-hist (states->hourly (:states pt))
+        rh-hist (states->hourly (:states ph))
         rs (ha-get-raw "/states")
         all (when (= 200 (:status rs)) (try (json/parse-string (str (:body rs)) true) (catch Exception _ nil)))
         sensors (when (sequential? all)
@@ -146,43 +149,54 @@
                        (mapv (fn [s] {:id (:entity_id s) :state (:state s)
                                       :unit (get-in s [:attributes :unit_of_measurement])}))
                        (sort-by :id) vec))
-        cur (some (fn [s] (when (= (:entity_id s) sensor) s)) all)
-        cur-map (when cur (when-let [v (num? (:state cur))]
-                            (when-let [h (iso->hour (or (:last_changed cur) (:last_updated cur)))] {h v})))
-        merged (merge (or hist {}) cur-map)]
+        cur-of (fn [ent] (let [c (some (fn [s] (when (= (:entity_id s) ent) s)) all)]
+                           (when c (when-let [v (num? (:state c))]
+                                     (when-let [h (iso->hour (or (:last_changed c) (:last_updated c)))] {h v})))))
+        t-in (merge (or t-hist {}) (cur-of sensor))
+        rh-in (merge (or rh-hist {}) (cur-of humidity-sensor))]
     (reset! entities (or sensors []))
-    (reset! ha-debug {:hist-status (:status p) :hist-raw (:raw p) :days history-days
+    (reset! ha-debug {:hist-status (:status pt) :hist-raw (:raw pt) :days history-days
                       :states-status (:status rs) :sensor-count (count sensors)
-                      :hours (count merged) :sensor sensor})
-    (println (str "[aqua] history raw=" (:raw p) " states=" (:status rs)
-                  " sensors=" (count sensors) " -> Innen-Stunden=" (count merged)))
-    merged))
+                      :hours (count t-in) :sensor sensor})
+    (println (str "[aqua] history T=" (:raw pt) " RH=" (:raw ph) " states=" (:status rs)
+                  " -> T-Std=" (count t-in) " RH-Std=" (count rh-in)))
+    {:t_in t-in :rh_in rh-in}))
 
 (defn parse-hourly [h]
   (when h
-    (->> (map (fn [ti te ra wi]
-                (when (some? te) [ti {:t_out te :solar ra :wind wi}]))
-              (:time h) (:temperature_2m h) (:shortwave_radiation h) (:wind_speed_10m h))
+    (->> (map (fn [ti te ra wi rh]
+                (when (some? te) [ti {:t_out te :solar ra :wind wi :rh_out rh}]))
+              (:time h) (:temperature_2m h) (:shortwave_radiation h) (:wind_speed_10m h) (:relative_humidity_2m h))
          (remove nil?)
          (into {}))))
 
 (defn outdoor-hourly
-  "Aussen/Strahlung/Wind stuendlich aus Open-Meteo (Forecast-API, letzte history-days Tage).
+  "Aussen/Strahlung/Wind/Feuchte stuendlich aus Open-Meteo (letzte history-days Tage).
    Null-Stunden fallen raus. Bewusst nur so weit zurueck, wie wir Innen-Daten haben."
   []
   (let [u (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
-               "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m"
+               "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m,relative_humidity_2m"
                "&past_days=" (min 92 history-days) "&forecast_days=1&timezone=UTC")]
     (or (parse-hourly (:hourly (om-get u))) {})))
 
-;; ---------- Archiv (CSV in /data) ----------
+;; ---------- Psychrometrie (Magnus) ----------
+(defn abs-hum [t rh]   ;; absolute Feuchte [g/m3]
+  (when (and t rh)
+    (/ (* 216.7 (/ (double rh) 100.0) 6.112 (Math/exp (/ (* 17.62 t) (+ 243.12 t)))) (+ 273.15 t))))
+(defn dew-point [t rh] ;; Taupunkt [C]
+  (when (and t rh (pos? (double rh)))
+    (let [g (+ (/ (* 17.62 t) (+ 243.12 t)) (Math/log (/ (double rh) 100.0)))]
+      (/ (* 243.12 g) (- 17.62 g)))))
+
+;; ---------- Archiv (CSV in /share) ----------
 (defn read-archive []
   (try
     (when (.exists (java.io.File. archive-file))
       (let [lines (str/split-lines (slurp archive-file))]
         (into {} (for [ln (rest lines) :when (not (str/blank? ln))]
-                   (let [[ts ti to so wi] (str/split ln #"," -1)]
-                     [ts {:t_in (num? ti) :t_out (num? to) :solar (num? so) :wind (num? wi)}])))))
+                   (let [[ts ti to so wi ri ro] (str/split ln #"," -1)]
+                     [ts {:t_in (num? ti) :t_out (num? to) :solar (num? so) :wind (num? wi)
+                          :rh_in (num? ri) :rh_out (num? ro)}])))))
     (catch Exception _ {})))
 
 (defn write-archive [m]
@@ -190,23 +204,26 @@
     (let [p (.getParentFile (java.io.File. archive-file))]
       (when (and p (not (.exists p))) (.mkdirs p)))
     (let [rows (sort-by first m)
-          body (str "ts,t_in,t_out,solar,wind\n"
+          body (str "ts,t_in,t_out,solar,wind,rh_in,rh_out\n"
                     (str/join "\n"
                       (for [[ts v] rows]
                         (str ts "," (or (:t_in v) "") "," (or (:t_out v) "")
-                             "," (or (:solar v) "") "," (or (:wind v) "")))))]
+                             "," (or (:solar v) "") "," (or (:wind v) "")
+                             "," (or (:rh_in v) "") "," (or (:rh_out v) "")))))]
       (spit archive-file body))
     (catch Exception e (println "[aqua] Archiv-Schreibfehler" (.getMessage e)))))
 
 (defn build-archive []
   (let [in (or (indoor-hourly) {})
+        t-in (:t_in in) rh-in (:rh_in in)
         out (or (outdoor-hourly) {})
         old (read-archive)
-        keys (into #{} (concat (keys old) (keys in) (keys out)))
+        keys (into #{} (concat (keys old) (keys t-in) (keys rh-in) (keys out)))
         merged (into {} (for [ts keys]
                           [ts (merge (get old ts)
-                                     (when-let [o (get out ts)] o)
-                                     (when-let [i (get in ts)] {:t_in i}))]))]
+                                     (when-let [o (get out ts)] o)          ;; :t_out :solar :wind :rh_out
+                                     (when-let [v (get t-in ts)] {:t_in v})
+                                     (when-let [v (get rh-in ts)] {:rh_in v}))]))]
     (write-archive merged)
     merged))
 
@@ -371,6 +388,9 @@
        :t_out (mapv :t_out s)
        :solar (mapv :solar s)
        :wind  (mapv :wind s)
+       :q_in  (mapv #(abs-hum (:t_in %) (:rh_in %)) s)
+       :q_out (mapv #(abs-hum (:t_out %) (:rh_out %)) s)
+       :dew_in (mapv #(dew-point (:t_in %) (:rh_in %)) s)
        :t_back (when tm (mapv #(get (:back tm) (:e %)) s))
        :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)})
        :indoor_hours n-in :indoor_span_days span-d :days days

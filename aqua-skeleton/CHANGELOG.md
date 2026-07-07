@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+- Feuchte-Auswertung: absolute Feuchte innen/außen (Magnus) + Taupunkt innen ins Chart,
+  Kacheln (q_in, Δ zu außen, Taupunkt). Zeigt die Wand-Sorption sichtbar (q_in > q_out).
+- Neue Option humidity_sensor. Archiv um rh_in/rh_out erweitert (rueckwaerts-kompatibel).
+- Kein ACH-Wert: aus Sommerdaten sorptionsdominiert/nicht trennbar (ehrlich vertagt).
+
 ## 0.6.1
 - Fix: Beim Fensterwechsel wird der Chart nicht mehr neu erzeugt, sondern nur die Daten
   getauscht - abgeschaltete Legenden-Serien bleiben abgeschaltet.

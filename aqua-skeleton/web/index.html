@@ -63,34 +63,46 @@
         ["Außen aktuell", fmt(tout,1)+" °C", "Open-Meteo"],
         ["Innen-Messpunkte", nIn+"", "über "+fmt(d.indoor_span_days,1)+" Tage (sparse)"]
       );
+      const qin = d.q_in ? lastNonNull(d.q_in) : null;
+      const qout = d.q_out ? lastNonNull(d.q_out) : null;
+      const dew = d.dew_in ? lastNonNull(d.dew_in) : null;
+      if (qin!=null) items.push(
+        ["abs. Feuchte innen", fmt(qin,1)+" g/m³",
+         (qout!=null ? ("Δ außen "+(qin-qout>=0?"+":"")+fmt(qin-qout,1)+" → Wände geben ab") : "")],
+        ["Taupunkt innen", fmt(dew,1)+" °C", "Kondensation an Flächen < dieser T"]
+      );
       el.innerHTML = items.map(([t,v,s]) =>
         `<div class="card"><small>${t}</small><b>${v}</b><small>${s}</small></div>`).join("");
     }
 
     let uplot = null;
     function draw(d){
-      const back = d.t_back || d.time.map(()=>null);
-      const data = [d.time, d.t_in, back, d.t_out, d.solar, d.wind];
+      const nul = d.time.map(()=>null);
+      const data = [d.time, d.t_in, (d.t_back||nul), d.t_out, d.solar, d.wind,
+                    (d.q_in||nul), (d.q_out||nul), (d.dew_in||nul)];
       // Chart NUR EINMAL erzeugen; bei Fensterwechsel nur Daten tauschen ->
       // Legenden-Toggles (an/aus) bleiben erhalten.
       if (uplot){ uplot.setData(data); return; }
       const w = Math.max(320, document.getElementById("chart").clientWidth || 900);
       const opts = {
-        width:w, height:420,
-        scales:{ x:{time:true}, C:{}, sun:{}, wind:{} },
+        width:w, height:440,
+        scales:{ x:{time:true}, C:{}, sun:{}, wind:{}, q:{} },
         series:[
           {},
-          {label:"Innen (gemessen)",    scale:"C", stroke:"#c0392b", width:2, spanGaps:true},
-          {label:"Modell (rückwärts)",  scale:"C", stroke:"#8e44ad", width:1.5, dash:[6,4], spanGaps:true},
-          {label:"Außen",               scale:"C", stroke:"#2980b9", width:1, spanGaps:true},
-          {label:"Sonne W/m²",          scale:"sun", stroke:"#e69510", width:1, spanGaps:true},
-          {label:"Wind km/h",           scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:true},
+          {label:"Innen T (°C)",       scale:"C", stroke:"#c0392b", width:2, spanGaps:true},
+          {label:"Modell rückw. (°C)", scale:"C", stroke:"#8e44ad", width:1.5, dash:[6,4], spanGaps:true},
+          {label:"Außen T (°C)",       scale:"C", stroke:"#2980b9", width:1, spanGaps:true},
+          {label:"Sonne W/m²",         scale:"sun", stroke:"#e69510", width:1, show:false, spanGaps:true},
+          {label:"Wind km/h",          scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:true},
+          {label:"Feuchte innen (g/m³)",scale:"q", stroke:"#16a085", width:2, spanGaps:true},
+          {label:"Feuchte außen (g/m³)",scale:"q", stroke:"#27ae60", width:1, dash:[4,3], spanGaps:true},
+          {label:"Taupunkt innen (°C)", scale:"C", stroke:"#7f8c8d", width:1, dash:[2,3], show:false, spanGaps:true},
         ],
-        axes:[ {}, {scale:"C", label:"°C"}, {scale:"sun", side:1, label:"W/m²", grid:{show:false}} ],
+        axes:[ {}, {scale:"C", label:"°C"}, {scale:"q", side:1, label:"g/m³", grid:{show:false}} ],
       };
       uplot = new uPlot(opts, data, document.getElementById("chart"));
       window.addEventListener("resize", () =>
-        uplot.setSize({width:Math.max(320,document.getElementById("chart").clientWidth), height:420}));
+        uplot.setSize({width:Math.max(320,document.getElementById("chart").clientWidth), height:440}));
     }
 
     let curWin = 7;   // Default: 7 Tage (schneidet den Sensor-Umzug weg)
