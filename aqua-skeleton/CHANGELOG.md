@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+- Umbau in 4 thematische Grafiken mit je Kacheln + Erklärtext: Temperatur, relative
+  Feuchte (+ Schimmel-Schwelle), absolute Feuchte, Korrelationen.
+- Korrelationen jetzt LIVE im Add-on gerechnet: corr(T,RH), corr(T,q), Kreuzkorrelation
+  Außen→Innen über Verzug, + 2. unabhängiges τ aus Tages-Amplitudendämpfung.
+
 ## 0.7.0
 - Feuchte-Auswertung: absolute Feuchte innen/außen (Magnus) + Taupunkt innen ins Chart,
   Kacheln (q_in, Δ zu außen, Taupunkt). Zeigt die Wand-Sorption sichtbar (q_in > q_out).

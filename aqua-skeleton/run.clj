@@ -188,6 +188,15 @@
     (let [g (+ (/ (* 17.62 t) (+ 243.12 t)) (Math/log (/ (double rh) 100.0)))]
       (/ (* 243.12 g) (- 17.62 g)))))
 
+(defn pearson [xs ys]  ;; Korrelationskoeffizient, nil bei zu wenig/konstant
+  (let [n (count xs)]
+    (when (> n 8)
+      (let [mx (/ (reduce + xs) n) my (/ (reduce + ys) n)
+            cov (reduce + (map (fn [x y] (* (- x mx) (- y my))) xs ys))
+            sx (Math/sqrt (reduce + (map #(let [d (- % mx)] (* d d)) xs)))
+            sy (Math/sqrt (reduce + (map #(let [d (- % my)] (* d d)) ys)))]
+        (when (and (pos? sx) (pos? sy)) (/ cov (* sx sy)))))))
+
 ;; ---------- Archiv (CSV in /share) ----------
 (defn read-archive []
   (try
@@ -345,8 +354,22 @@
                                      [(double (nth tin (dec n)))]
                                      (range (dec n) 0 -1))))
                   tau-h (/ 1.0 a) tau-d (/ tau-h 24.0)
-                  wk (/ (* c-mj-estimate 1e6) (* tau-h 3600.0))]   ;; W/K = C / tau
+                  wk (/ (* c-mj-estimate 1e6) (* tau-h 3600.0))   ;; W/K = C / tau
+                  daily-amp (fn [ser] (let [ds (partition-all 24 ser)]
+                                        (/ (reduce + (map #(- (apply max %) (apply min %)) ds)) (count ds))))
+                  a-in (daily-amp tin) a-out (daily-amp tout)
+                  wday (/ (* 2 Math/PI) 24.0)
+                  damp (/ a-out (max 0.05 a-in))
+                  tau-daily (when (> damp 1.0) (/ (Math/sqrt (- (* damp damp) 1.0)) wday 24.0))
+                  mi (/ (reduce + tin) n) mo (/ (reduce + tout) n)
+                  si (Math/sqrt (reduce + (map #(let [d (- % mi)] (* d d)) tin)))
+                  so (Math/sqrt (reduce + (map #(let [d (- % mo)] (* d d)) tout)))
+                  xcorr (vec (for [lag (range 0 25)]
+                               (let [ps (map (fn [k] [(nth tout (- k lag)) (nth tin k)]) (range lag n))
+                                     cov (reduce + (map (fn [[o i]] (* (- o mo) (- i mi))) ps))]
+                                 {:lag lag :r (if (and (pos? si) (pos? so)) (/ cov (* si so)) 0.0)})))]
               {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate
+               :tau-daily tau-daily :damp damp :a-in a-in :a-out a-out :xcorr xcorr
                :back (zipmap hrs back)})))))
     (catch Exception e (println "[aqua] thermal-model Fehler:" (.getMessage e)) nil)))
 
@@ -380,7 +403,13 @@
         tm (thermal-model warch)
         in-eps (->> rows (filter :t_in) (map :e) sort)
         n-in (count in-eps)
-        span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))]
+        span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))
+        ;; Korrelationen (nur Stunden mit beiden Werten)
+        q-of (fn [r] (abs-hum (:t_in r) (:rh_in r)))
+        pr (fn [fx fy] (let [ps (keep (fn [r] (let [x (fx r) y (fy r)]
+                                                (when (and (some? x) (some? y)) [x y]))) s)]
+                         (when (seq ps) (pearson (mapv first ps) (mapv second ps)))))
+        corr {:t_rh (pr :t_in :rh_in) :t_q (pr :t_in q-of) :tout_tin (pr :t_out :t_in)}]
     (if (empty? s)
       {:time [] :status (:status @state) :days days :ha_debug @ha-debug :sensors @entities}
       {:time  (mapv :e s)
@@ -392,7 +421,12 @@
        :q_out (mapv #(abs-hum (:t_out %) (:rh_out %)) s)
        :dew_in (mapv #(dew-point (:t_in %) (:rh_in %)) s)
        :t_back (when tm (mapv #(get (:back tm) (:e %)) s))
-       :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)})
+       :rh_in (mapv :rh_in s)
+       :rh_out (mapv :rh_out s)
+       :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)
+                          :tau_daily (:tau-daily tm) :damp (:damp tm)
+                          :a_in (:a-in tm) :a_out (:a-out tm) :xcorr (:xcorr tm)})
+       :corr corr
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
        :ha_debug @ha-debug :sensors @entities})))

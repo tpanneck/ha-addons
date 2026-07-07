@@ -3,143 +3,157 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edlau — Thermisches Archiv</title>
+  <title>Edlau — Thermik & Feuchte</title>
   <link rel="stylesheet" href="uPlot.min.css">
   <style>
-    body{font-family:system-ui,-apple-system,sans-serif;margin:1.2rem;color:#12253a}
+    body{font-family:system-ui,-apple-system,sans-serif;margin:1.2rem;color:#12253a;max-width:1000px}
     h1{font-size:1.3rem;margin:.2rem 0}
-    .cards{display:flex;flex-wrap:wrap;gap:.6rem;margin:.8rem 0}
-    .card{background:#f4f7ff;border:1px solid #dde3f5;border-radius:8px;padding:.5rem .8rem;min-width:8rem}
-    .card b{display:block;font-size:1.25rem}
-    .card small{color:#667}
+    h2{font-size:1.05rem;margin:.2rem 0}
+    .section{border:1px solid #e3e8f5;border-radius:10px;padding:.8rem 1rem;margin:1rem 0;background:#fbfcff}
+    .cards{display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0}
+    .card{background:#f4f7ff;border:1px solid #dde3f5;border-radius:8px;padding:.4rem .7rem;min-width:7rem}
+    .card b{display:block;font-size:1.15rem}.card small{color:#667}
     .muted{color:#667;font-size:.85rem}
-    #chart{margin-top:.6rem}
+    .expl{color:#334;font-size:.9rem;margin:.2rem 0 .5rem}
+    button{margin:0 .1rem;cursor:pointer}
     .err{color:#b02020;font-weight:600}
   </style>
 </head>
 <body>
-  <h1>🌡️ Edlau — Thermisches Archiv (Daten-Monitor)</h1>
+  <h1>🏠 Edlau — Thermik &amp; Feuchte</h1>
   <div id="status" class="muted">lade …</div>
   <div id="controls" style="margin:.5rem 0">
     <span class="muted">Fit-/Anzeige-Fenster:</span>
-    <button data-d="3">3 T</button>
-    <button data-d="7">7 T</button>
-    <button data-d="14">14 T</button>
-    <button data-d="0">Alle</button>
-    <span id="winnote" class="muted" style="font-size:.8rem"></span>
+    <button data-d="3">3 T</button><button data-d="7">7 T</button>
+    <button data-d="14">14 T</button><button data-d="0">Alle</button>
+    <span id="winnote" class="muted"></span>
   </div>
-  <div id="hadbg" class="muted" style="font-size:.8rem"></div>
-  <div id="cards" class="cards"></div>
-  <div id="chart"></div>
-  <details id="sensorbox" style="margin-top:1rem">
-    <summary class="muted" style="cursor:pointer">Alle <code>sensor.*</code>-Entities der Box (aus /states)</summary>
-    <div id="sensors" class="muted" style="font-size:.8rem;margin-top:.4rem"></div>
-  </details>
-  <p class="muted">Innen = Messung (HA /states, archiviert in /share) · Außen/Sonne/Wind = Open-Meteo.
-     Serien in der Legende an/aus klickbar. (Modell-Schätzung ist geparkt — im Sommer nicht aussagekräftig.)</p>
+  <div id="hadbg" class="muted" style="font-size:.78rem"></div>
+
+  <div class="section">
+    <h2>1 · Temperatur</h2>
+    <p class="expl">Innen (gemessen) vs. Außen, plus das rückwärts integrierte RC-Modell.
+       Die <b>Abkling-Zeitkonstante τ</b> misst die träge Kernmasse; W/K = C/τ (C = Masse als Anker).</p>
+    <div id="c1cards" class="cards"></div><div id="c1" class="chart"></div>
+  </div>
+
+  <div class="section">
+    <h2>2 · Relative Feuchte</h2>
+    <p class="expl">Die praktische Größe: Behaglichkeit &amp; <b>Schimmel</b> (Dauer &gt; ~70–80 % kritisch).
+       Kurzfristig steigt RH, wenn T fällt (Thermometer-Effekt) — die Wand dämpft das nur teilweise.</p>
+    <div id="c2cards" class="cards"></div><div id="c2" class="chart"></div>
+  </div>
+
+  <div class="section">
+    <h2>3 · Absolute Feuchte</h2>
+    <p class="expl">Der Wassergehalt der Luft (g/m³). <b>Innen &gt; Außen</b> im leeren Haus ⇒ die
+       hygroskopische Wand gibt Wasser ab (Sorption). q folgt der Temperatur.</p>
+    <div id="c3cards" class="cards"></div><div id="c3" class="chart"></div>
+  </div>
+
+  <div class="section">
+    <h2>4 · Korrelationen</h2>
+    <p class="expl">Kreuzkorrelation Außen→Innen über den Verzug: das <b>Maximum bei einem Verzug &gt; 0</b>
+       ist die thermische Trägheit. Daraus (Tages-Amplitudendämpfung) ein <b>zweites, unabhängiges τ</b>
+       — es sieht die schnelle Oberflächenmasse und ist meist kleiner als das Abkling-τ.</p>
+    <div id="c4cards" class="cards"></div><div id="c4" class="chart"></div>
+  </div>
+
+  <details style="margin-top:1rem"><summary class="muted" style="cursor:pointer">Alle <code>sensor.*</code> der Box</summary>
+    <div id="sensors" class="muted" style="font-size:.8rem;margin-top:.4rem"></div></details>
 
   <script src="uPlot.iife.min.js"></script>
   <script>
-    const fmt = (v,d=1) => (v==null||isNaN(v)) ? "–" : Number(v).toFixed(d);
-    const lastNonNull = a => { for (let i=a.length-1;i>=0;i--) if (a[i]!=null) return a[i]; return null; };
-
-    function summary(d){
-      const el = document.getElementById("cards");
-      const nIn = d.indoor_hours || 0;
-      const tin = d.t_in ? lastNonNull(d.t_in) : null;
-      const tout = d.t_out ? lastNonNull(d.t_out) : null;
-      const span = d.time && d.time.length ? (d.time[d.time.length-1]-d.time[0])/86400 : 0;
-      const items = [];
-      if (d.thermal) {
-        const t = d.thermal;
-        items.push(
-          ["τ (live gemessen)", fmt(t.tau_d,1)+" d", "R² = "+fmt(t.r2,3)],
-          ["W/K = C/τ", fmt(t.wk,0)+" W/K", "aus C + τ, nicht U-Wert"],
-          ["C (Masse)", fmt(t.c_mj,0)+" MJ/K", "Eingabe/Anker"]
-        );
-      }
-      items.push(
-        ["Innen aktuell", fmt(tin,1)+" °C", "Wohnzimmer"],
-        ["Außen aktuell", fmt(tout,1)+" °C", "Open-Meteo"],
-        ["Innen-Messpunkte", nIn+"", "über "+fmt(d.indoor_span_days,1)+" Tage (sparse)"]
-      );
-      const qin = d.q_in ? lastNonNull(d.q_in) : null;
-      const qout = d.q_out ? lastNonNull(d.q_out) : null;
-      const dew = d.dew_in ? lastNonNull(d.dew_in) : null;
-      if (qin!=null) items.push(
-        ["abs. Feuchte innen", fmt(qin,1)+" g/m³",
-         (qout!=null ? ("Δ außen "+(qin-qout>=0?"+":"")+fmt(qin-qout,1)+" → Wände geben ab") : "")],
-        ["Taupunkt innen", fmt(dew,1)+" °C", "Kondensation an Flächen < dieser T"]
-      );
-      el.innerHTML = items.map(([t,v,s]) =>
-        `<div class="card"><small>${t}</small><b>${v}</b><small>${s}</small></div>`).join("");
+    const fmt=(v,d=1)=>(v==null||isNaN(v))?"–":Number(v).toFixed(d);
+    const lastNN=a=>{ if(!a) return null; for(let i=a.length-1;i>=0;i--) if(a[i]!=null) return a[i]; return null; };
+    const cards=(el,items)=>{ document.getElementById(el).innerHTML =
+      items.map(([t,v,s])=>`<div class="card"><small>${t}</small><b>${v}</b><small>${s||""}</small></div>`).join(""); };
+    const charts={};
+    function chart(key,elId,opts,data){
+      if(charts[key]){ charts[key].setData(data); return; }
+      opts.width=Math.max(320,document.getElementById(elId).clientWidth||900);
+      charts[key]=new uPlot(opts,data,document.getElementById(elId));
     }
+    window.addEventListener("resize",()=>{ for(const k in charts)
+      charts[k].setSize({width:Math.max(320,charts[k].root.parentNode.clientWidth),height:charts[k].height}); });
 
-    let uplot = null;
-    function draw(d){
-      const nul = d.time.map(()=>null);
-      const data = [d.time, d.t_in, (d.t_back||nul), d.t_out, d.solar, d.wind,
-                    (d.q_in||nul), (d.q_out||nul), (d.dew_in||nul)];
-      // Chart NUR EINMAL erzeugen; bei Fensterwechsel nur Daten tauschen ->
-      // Legenden-Toggles (an/aus) bleiben erhalten.
-      if (uplot){ uplot.setData(data); return; }
-      const w = Math.max(320, document.getElementById("chart").clientWidth || 900);
-      const opts = {
-        width:w, height:440,
-        scales:{ x:{time:true}, C:{}, sun:{}, wind:{}, q:{} },
-        series:[
-          {},
-          {label:"Innen T (°C)",       scale:"C", stroke:"#c0392b", width:2, spanGaps:true},
-          {label:"Modell rückw. (°C)", scale:"C", stroke:"#8e44ad", width:1.5, dash:[6,4], spanGaps:true},
-          {label:"Außen T (°C)",       scale:"C", stroke:"#2980b9", width:1, spanGaps:true},
-          {label:"Sonne W/m²",         scale:"sun", stroke:"#e69510", width:1, show:false, spanGaps:true},
-          {label:"Wind km/h",          scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:true},
-          {label:"Feuchte innen (g/m³)",scale:"q", stroke:"#16a085", width:2, spanGaps:true},
-          {label:"Feuchte außen (g/m³)",scale:"q", stroke:"#27ae60", width:1, dash:[4,3], spanGaps:true},
-          {label:"Taupunkt innen (°C)", scale:"C", stroke:"#7f8c8d", width:1, dash:[2,3], show:false, spanGaps:true},
-        ],
-        axes:[ {}, {scale:"C", label:"°C"}, {scale:"q", side:1, label:"g/m³", grid:{show:false}} ],
-      };
-      uplot = new uPlot(opts, data, document.getElementById("chart"));
-      window.addEventListener("resize", () =>
-        uplot.setSize({width:Math.max(320,document.getElementById("chart").clientWidth), height:440}));
-    }
-
-    let curWin = 7;   // Default: 7 Tage (schneidet den Sensor-Umzug weg)
+    let curWin=7;
     function load(days){
-      curWin = days;
-      document.getElementById("winnote").textContent =
-        days ? ("· Fit über die letzten "+days+" Tage") : "· Fit über alle Daten";
-      fetch("api/data" + (days ? ("?days="+days) : "")).then(r=>r.json()).then(d=>{
-      const h = d.ha_debug || {};
-      document.getElementById("hadbg").innerHTML =
-        "History ("+(h.days??"?")+" Tage): Status "+(h["hist-status"]??"–")+" · Einträge "+(h["hist-raw"]??"–")
-        +" &nbsp;|&nbsp; /states: Status "+(h["states-status"]??"–")+" · "+(h["sensor-count"]??0)+" Sensoren"
-        +" &nbsp;|&nbsp; Archiv-Innen "+(h.hours??0)+" Std";
-      const sb = document.getElementById("sensors");
-      if (d.sensors && d.sensors.length)
-        sb.innerHTML = "<table><tr><th>entity_id</th><th>Wert</th></tr>"
-          + d.sensors.map(s=>`<tr><td><code>${s.id}</code></td><td>${s.state??"–"} ${s.unit||""}</td></tr>`).join("")
-          + "</table>";
-      else sb.textContent = "keine Sensoren geladen";
-      if (d.status !== "ok"){
-        document.getElementById("status").textContent =
-          "Status: "+(d.status||"?")+" — erster Abruf läuft, Seite in ~20 s neu laden.";
-        return;
-      }
-      summary(d);
-      if (!d.time || d.time.length===0){
-        document.getElementById("status").textContent = "Status: ok — aber keine Daten im Archiv.";
-        return;
-      }
-      document.getElementById("status").textContent = "Stand: "+(d.updated||"–");
-      draw(d);
-      }).catch(e=>{
-        document.getElementById("status").innerHTML = '<span class="err">Fehler beim Laden: '+e+'</span>';
-      });
+      curWin=days;
+      document.getElementById("winnote").textContent = days?("· Fenster "+days+" Tage"):"· alle Daten";
+      fetch("api/data"+(days?("?days="+days):"")).then(r=>r.json()).then(d=>render(d))
+        .catch(e=>document.getElementById("status").innerHTML='<span class="err">Fehler: '+e+'</span>');
     }
-    document.querySelectorAll("#controls button").forEach(b =>
-      b.addEventListener("click", () => load(parseInt(b.dataset.d))));
+
+    function render(d){
+      const h=d.ha_debug||{};
+      document.getElementById("hadbg").innerHTML =
+        "History "+(h.days??"?")+" T: "+(h["hist-raw"]??"–")+" Pkt · /states "+(h["states-status"]??"–")
+        +" · "+(h["sensor-count"]??0)+" Sensoren";
+      const sb=document.getElementById("sensors");
+      if(d.sensors&&d.sensors.length) sb.innerHTML="<table>"+d.sensors.map(s=>`<tr><td><code>${s.id}</code></td><td>${s.state??"–"} ${s.unit||""}</td></tr>`).join("")+"</table>";
+      if(d.status!=="ok"){ document.getElementById("status").textContent="Status: "+(d.status||"?")+" — erster Abruf läuft, in ~20 s neu laden."; return; }
+      if(!d.time||!d.time.length){ document.getElementById("status").textContent="ok — keine Daten im Archiv."; return; }
+      document.getElementById("status").textContent="Stand: "+(d.updated||"–");
+      const t=d.thermal||{}, c=d.corr||{}, nul=d.time.map(()=>null);
+
+      // 1 Temperatur
+      cards("c1cards",[
+        ["Innen T", fmt(lastNN(d.t_in),1)+" °C",""],
+        ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
+        ["τ Abkling", fmt(t.tau_d,1)+" d", "R²="+fmt(t.r2,3)],
+        ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"],
+      ]);
+      chart("c1","c1",{height:300,scales:{x:{time:true},C:{}},
+        series:[{},{label:"Innen (°C)",scale:"C",stroke:"#c0392b",width:2,spanGaps:true},
+                {label:"Außen (°C)",scale:"C",stroke:"#2980b9",width:1,spanGaps:true},
+                {label:"Modell rückw.",scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true}],
+        axes:[{},{scale:"C",label:"°C"}]},
+        [d.time,d.t_in,d.t_out,(d.t_back||nul)]);
+
+      // 2 relative Feuchte
+      cards("c2cards",[
+        ["RH innen", fmt(lastNN(d.rh_in),0)+" %",""],
+        ["RH außen", fmt(lastNN(d.rh_out),0)+" %",""],
+        ["Taupunkt innen", fmt(lastNN(d.dew_in),1)+" °C","Kondensation < dieser T"],
+      ]);
+      chart("c2","c2",{height:260,scales:{x:{time:true},P:{range:[0,100]}},
+        series:[{},{label:"RH innen (%)",scale:"P",stroke:"#16a085",width:2,spanGaps:true},
+                {label:"RH außen (%)",scale:"P",stroke:"#27ae60",width:1,dash:[4,3],spanGaps:true},
+                {label:"Schimmel-Schwelle",scale:"P",stroke:"#c0392b",width:1,dash:[2,4]}],
+        axes:[{},{scale:"P",label:"%"}]},
+        [d.time,d.rh_in,d.rh_out,d.time.map(()=>75)]);
+
+      // 3 absolute Feuchte
+      const qin=lastNN(d.q_in),qout=lastNN(d.q_out);
+      cards("c3cards",[
+        ["q innen", fmt(qin,1)+" g/m³",""],
+        ["q außen", fmt(qout,1)+" g/m³",""],
+        ["Δ innen−außen", (qin!=null&&qout!=null?((qin-qout>=0?"+":"")+fmt(qin-qout,1)):"–")+" g/m³","Wände geben ab"],
+      ]);
+      chart("c3","c3",{height:260,scales:{x:{time:true},q:{}},
+        series:[{},{label:"q innen (g/m³)",scale:"q",stroke:"#16a085",width:2,spanGaps:true},
+                {label:"q außen (g/m³)",scale:"q",stroke:"#e67e22",width:1,dash:[4,3],spanGaps:true}],
+        axes:[{},{scale:"q",label:"g/m³"}]},
+        [d.time,d.q_in,d.q_out]);
+
+      // 4 Korrelationen
+      const xc=t.xcorr||[]; const lags=xc.map(p=>p.lag), rs=xc.map(p=>p.r);
+      const peak=xc.reduce((a,p)=>p.r>a.r?p:a,{lag:0,r:-2});
+      cards("c4cards",[
+        ["corr(T,RH)", fmt(c.t_rh,2), "innen"],
+        ["corr(T,q)", fmt(c.t_q,2), "innen (Sorption)"],
+        ["corr(Außen→Innen)", fmt(c.tout_tin,2), "Verzug-Peak "+peak.lag+" h"],
+        ["Dämpfung", fmt(t.damp,0)+"×", "Tagesamplitude"],
+        ["τ Tagesdämpfung", fmt(t.tau_daily,1)+" d", "schnelle Masse"],
+      ]);
+      if(lags.length) chart("c4","c4",{height:240,scales:{x:{time:false},r:{range:[-1,1]}},
+        series:[{label:"Verzug (h)"},{label:"Korrelation Außen→Innen",scale:"r",stroke:"#8e44ad",width:2}],
+        axes:[{label:"Verzug [h]"},{scale:"r",label:"r"}]},
+        [lags,rs]);
+    }
+
+    document.querySelectorAll("#controls button").forEach(b=>b.addEventListener("click",()=>load(parseInt(b.dataset.d))));
     load(curWin);
   </script>
 </body>
