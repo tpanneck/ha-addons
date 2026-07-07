@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+- UI-Fenster-Buttons (3 / 7 / 14 / Alle Tage): Fit + Anzeige werden pro Fenster
+  live neu gerechnet. Default 7 Tage — schneidet den Sensor-Umzug/Rausch-Anfang weg.
+- Fit läuft jetzt pro angefordertem Fenster (/api/data?days=N), nicht mehr fix beim Refresh.
+
 ## 0.5.2
 - Fix: Options-Default c_mj als Float (290.0) statt Ganzzahl (290) - int/float-Mismatch
   gegen das float-Schema konnte das Update abbrechen lassen.

@@ -20,6 +20,14 @@
 <body>
   <h1>🌡️ Edlau — Thermisches Archiv (Daten-Monitor)</h1>
   <div id="status" class="muted">lade …</div>
+  <div id="controls" style="margin:.5rem 0">
+    <span class="muted">Fit-/Anzeige-Fenster:</span>
+    <button data-d="3">3 T</button>
+    <button data-d="7">7 T</button>
+    <button data-d="14">14 T</button>
+    <button data-d="0">Alle</button>
+    <span id="winnote" class="muted" style="font-size:.8rem"></span>
+  </div>
   <div id="hadbg" class="muted" style="font-size:.8rem"></div>
   <div id="cards" class="cards"></div>
   <div id="chart"></div>
@@ -82,7 +90,12 @@
         u.setSize({width:Math.max(320,document.getElementById("chart").clientWidth), height:420}));
     }
 
-    fetch("api/data").then(r=>r.json()).then(d=>{
+    let curWin = 7;   // Default: 7 Tage (schneidet den Sensor-Umzug weg)
+    function load(days){
+      curWin = days;
+      document.getElementById("winnote").textContent =
+        days ? ("· Fit über die letzten "+days+" Tage") : "· Fit über alle Daten";
+      fetch("api/data" + (days ? ("?days="+days) : "")).then(r=>r.json()).then(d=>{
       const h = d.ha_debug || {};
       document.getElementById("hadbg").innerHTML =
         "History ("+(h.days??"?")+" Tage): Status "+(h["hist-status"]??"–")+" · Einträge "+(h["hist-raw"]??"–")
@@ -106,9 +119,13 @@
       }
       document.getElementById("status").textContent = "Stand: "+(d.updated||"–");
       draw(d);
-    }).catch(e=>{
-      document.getElementById("status").innerHTML = '<span class="err">Fehler beim Laden: '+e+'</span>';
-    });
+      }).catch(e=>{
+        document.getElementById("status").innerHTML = '<span class="err">Fehler beim Laden: '+e+'</span>';
+      });
+    }
+    document.querySelectorAll("#controls button").forEach(b =>
+      b.addEventListener("click", () => load(parseInt(b.dataset.d))));
+    load(curWin);
   </script>
 </body>
 </html>

@@ -340,42 +340,41 @@
   (println "[aqua] Archiv-Update laeuft...")
   ;; Modell bewusst GEPARKT (im Sommer nicht identifizierbar) - nur Daten laden + zeigen.
   (let [arch (build-archive)
-        series (attach-model (archive->rows arch) nil)
-        tm (thermal-model arch)
-        in-eps (->> arch (filter (comp :t_in val)) keys (map hour->epoch) (remove nil?) sort)
-        n-in (count in-eps)
-        span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))]
-    (reset! state {:status "ok" :archive arch :model nil :series series :thermal tm
-                   :indoor-hours n-in :indoor-span-days span-d
-                   :indoor-from (first in-eps) :indoor-to (last in-eps)
-                   :updated (str (java.time.OffsetDateTime/now))})
-    (println (str "[aqua] fertig: " (count arch) " Std Archiv, " n-in
-                  " Innen-Punkte ueber " (when span-d (format "%.1f" span-d)) " Tage"
-                  (when tm (format "; tau=%.1f d, W/K=%.0f, C=%.0f MJ/K, R2=%.3f"
-                                   (:tau-d tm) (:wk tm) (:c-mj tm) (:r2 tm)))))))
+        tm (thermal-model arch)]
+    (reset! state {:status "ok" :archive arch :updated (str (java.time.OffsetDateTime/now))})
+    (println (str "[aqua] fertig: " (count arch) " Std Archiv"
+                  (when tm (format "; tau=%.1f d, W/K=%.0f, R2=%.3f" (:tau-d tm) (:wk tm) (:r2 tm)))))))
 
 ;; ---------- Web ----------
-(defn series->json []
-  (let [s (:series @state)
-        m (:model @state)]
+(defn parse-days [qs]
+  (when qs (when-let [m (re-find #"days=(\d+)" qs)] (Integer/parseInt (second m)))))
+
+(defn build-response
+  "Antwort fuer /api/data, optional auf die letzten `days` Tage gefenstert
+   (Fenster <= ~9 d schneidet das Umzugs-Rauschen weg). Fit wird pro Fenster gerechnet."
+  [days]
+  (let [arch (:archive @state)
+        rows-all (archive->rows arch)
+        maxe (when (seq rows-all) (apply max (map :e rows-all)))
+        cutoff (when (and days (pos? days) maxe) (- maxe (* days 86400)))
+        rows (if cutoff (filterv #(>= (:e %) cutoff) rows-all) rows-all)
+        warch (if cutoff (into {} (filter #(when-let [e (hour->epoch (key %))] (>= e cutoff)) arch)) arch)
+        s (attach-model rows nil)
+        tm (thermal-model warch)
+        in-eps (->> rows (filter :t_in) (map :e) sort)
+        n-in (count in-eps)
+        span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))]
     (if (empty? s)
-      {:time [] :model m :status (:status @state) :indoor_hours (:indoor-hours @state)
-       :ha_debug @ha-debug :sensors @entities}
+      {:time [] :status (:status @state) :days days :ha_debug @ha-debug :sensors @entities}
       {:time  (mapv :e s)
-       :t_in  (mapv #(:t_in %) s)
-       :t_out (mapv #(:t_out %) s)
-       :solar (mapv #(:solar %) s)
-       :wind  (mapv #(:wind %) s)
-       :t_model (mapv #(:tm %) s)
-       :t_back (let [tm (:thermal @state)] (when tm (mapv #(get (:back tm) (:e %)) s)))
-       :thermal (when-let [tm (:thermal @state)]
-                  {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)})
-       :model m
-       :indoor_hours (:indoor-hours @state)
-       :indoor_span_days (:indoor-span-days @state)
-       :indoor_from (:indoor-from @state) :indoor_to (:indoor-to @state)
-       :updated (:updated @state)
-       :status (:status @state)
+       :t_in  (mapv :t_in s)
+       :t_out (mapv :t_out s)
+       :solar (mapv :solar s)
+       :wind  (mapv :wind s)
+       :t_back (when tm (mapv #(get (:back tm) (:e %)) s))
+       :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)})
+       :indoor_hours n-in :indoor_span_days span-d :days days
+       :updated (:updated @state) :status (:status @state)
        :ha_debug @ha-debug :sensors @entities})))
 
 (defn read-web [f ct]
@@ -387,7 +386,7 @@
 (defn handler [req]
   (case (:uri req)
     "/api/data"           {:status 200 :headers {"Content-Type" "application/json"}
-                           :body (json/generate-string (series->json))}
+                           :body (json/generate-string (build-response (parse-days (:query-string req))))}
     "/uPlot.iife.min.js"  (read-web "uPlot.iife.min.js" "application/javascript")
     "/uPlot.min.css"      (read-web "uPlot.min.css" "text/css")
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
