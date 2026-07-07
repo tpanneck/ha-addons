@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+- Fix: Beim Fensterwechsel wird der Chart nicht mehr neu erzeugt, sondern nur die Daten
+  getauscht - abgeschaltete Legenden-Serien bleiben abgeschaltet.
+
 ## 0.6.0
 - UI-Fenster-Buttons (3 / 7 / 14 / Alle Tage): Fit + Anzeige werden pro Fenster
   live neu gerechnet. Default 7 Tage — schneidet den Sensor-Umzug/Rausch-Anfang weg.
