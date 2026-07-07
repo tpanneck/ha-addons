@@ -70,9 +70,11 @@
 
     fetch("api/data").then(r=>r.json()).then(d=>{
       const h = d.ha_debug || {};
-      document.getElementById("hadbg").textContent =
-        "HA-History: Status "+(h.status??"–")+" · Rohpunkte "+(h.raw??"–")
-        +" · → "+(h.hours??0)+" Std · Sensor "+(h.sensor||"?");
+      document.getElementById("hadbg").innerHTML =
+        "History: Status "+(h["hist-status"]??"–")+" · Rohpunkte "+(h["hist-raw"]??"–")
+        +" | /states: Status "+(h["states-status"]??"–")
+        +" | → "+(h.hours??0)+" Std · Sensor "+(h.sensor||"?")
+        +(h.body ? "<br><code style='font-size:.72rem'>"+String(h.body).replace(/</g,"&lt;")+"</code>" : "");
       if (d.status !== "ok"){
         document.getElementById("status").textContent =
           "Status: "+(d.status||"?")+" — erster Abruf läuft, Seite in ~20 s neu laden.";

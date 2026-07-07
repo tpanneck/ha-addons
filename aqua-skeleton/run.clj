@@ -109,29 +109,43 @@
                {:status -1 :error (.getMessage e)})))))
 
 ;; ---------- Datenquellen ----------
+(defn current-indoor
+  "Aktueller Messwert ueber den bewiesenen /states-Weg (garantiert erreichbar)."
+  []
+  (let [resp (ha-get-raw (str "/states/" sensor))
+        body (when (= 200 (:status resp))
+               (try (json/parse-string (:body resp) true) (catch Exception _ nil)))
+        v (some-> body :state num?)
+        h (some-> body (#(iso->hour (or (:last_changed %) (:last_updated %)))))]
+    {:status (:status resp) :map (when (and v h) {h v})}))
+
 (defn indoor-hourly
-  "Stuendlich gemittelte Innentemperatur aus HAs History (letzte history-days Tage)."
+  "Innentemperatur stuendlich: History-Backfill (best effort) + aktueller /states-Wert."
   []
   (let [start (-> (java.time.Instant/now)
                   (.truncatedTo java.time.temporal.ChronoUnit/SECONDS)
                   (.minusSeconds (* history-days 86400)) .toString)
-        path (str "/history/period/" start "?filter_entity_id=" sensor "&no_attributes")
+        path (str "/history/period/" start "?filter_entity_id=" sensor "&minimal_response")
         resp (ha-get-raw path)
-        body (when (and resp (= 200 (:status resp)))
-               (try (json/parse-string (:body resp) true) (catch Exception _ nil)))
+        body-str (str (:body resp))
+        body (when (= 200 (:status resp)) (try (json/parse-string body-str true) (catch Exception _ nil)))
         states (first body)
         raw (if (sequential? states) (count states) 0)
-        hourly (when (sequential? states)
-                 (->> states
-                      (keep (fn [s] (when-let [v (num? (:state s))]
-                                      (when-let [h (iso->hour (or (:last_changed s) (:last_updated s)))] [h v]))))
-                      (group-by first)
-                      (map (fn [[h pairs]] [h (/ (reduce + (map second pairs)) (count pairs))]))
-                      (into {})))]
-    (reset! ha-debug {:status (:status resp) :raw raw :hours (count hourly) :sensor sensor})
-    (println (str "[aqua] HA-History status=" (:status resp) " Rohpunkte=" raw
-                  " -> Stunden=" (count hourly)))
-    (or hourly {})))
+        hist (when (sequential? states)
+               (->> states
+                    (keep (fn [s] (when-let [v (num? (:state s))]
+                                    (when-let [h (iso->hour (or (:last_changed s) (:last_updated s)))] [h v]))))
+                    (group-by first)
+                    (map (fn [[h pairs]] [h (/ (reduce + (map second pairs)) (count pairs))]))
+                    (into {})))
+        cur (current-indoor)
+        merged (merge (or hist {}) (:map cur))]
+    (reset! ha-debug {:hist-status (:status resp) :hist-raw raw
+                      :states-status (:status cur) :hours (count merged) :sensor sensor
+                      :body (subs body-str 0 (min 220 (count body-str)))})
+    (println (str "[aqua] History status=" (:status resp) " raw=" raw
+                  " | states status=" (:status cur) " -> Stunden=" (count merged)))
+    merged))
 
 (defn parse-hourly [h]
   (when h

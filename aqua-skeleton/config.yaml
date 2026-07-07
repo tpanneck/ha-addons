@@ -1,7 +1,7 @@
 # HA-Add-on-Manifest. Weil kein "image:" angegeben ist, BAUT der Supervisor
 # das Add-on lokal aus dem Dockerfile fuer die Architektur der Box.
 name: "Aqua Skeleton"
-version: "0.4.0"
+version: "0.4.1"
 slug: "aqua_skeleton"
 description: "Thermischer Daten-Monitor: Innen (HA) + Aussen/Sonne/Wind (Open-Meteo), Archiv in /share"
 arch:
