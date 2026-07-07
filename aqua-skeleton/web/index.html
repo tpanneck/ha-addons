@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edlau — Thermisches Archiv &amp; Modell</title>
+  <title>Edlau — Thermisches Archiv</title>
   <link rel="stylesheet" href="uPlot.min.css">
   <style>
     body{font-family:system-ui,-apple-system,sans-serif;margin:1.2rem;color:#12253a}
@@ -18,81 +18,74 @@
   </style>
 </head>
 <body>
-  <h1>🌡️ Edlau — Thermisches Archiv &amp; Modell</h1>
+  <h1>🌡️ Edlau — Thermisches Archiv (Daten-Monitor)</h1>
   <div id="status" class="muted">lade …</div>
   <div id="hadbg" class="muted" style="font-size:.8rem"></div>
   <div id="cards" class="cards"></div>
   <div id="chart"></div>
-  <p class="muted">Innen = Messung (HA-Recorder) · Außen/Sonne/Wind = Open-Meteo · „Innen (Modell)" = free-run des geschätzten RC-Modells. Serien in der Legende an/aus klickbar.</p>
+  <p class="muted">Innen = Messung (HA-Recorder, archiviert in /share) · Außen/Sonne/Wind = Open-Meteo.
+     Serien in der Legende an/aus klickbar. (Modell-Schätzung ist geparkt — im Sommer nicht aussagekräftig.)</p>
 
   <script src="uPlot.iife.min.js"></script>
   <script>
-    const fmtNum = (v, d=1) => (v==null || isNaN(v)) ? "–" : Number(v).toFixed(d);
+    const fmt = (v,d=1) => (v==null||isNaN(v)) ? "–" : Number(v).toFixed(d);
+    const lastNonNull = a => { for (let i=a.length-1;i>=0;i--) if (a[i]!=null) return a[i]; return null; };
 
-    function cards(m, indoorHours, updated) {
+    function summary(d){
       const el = document.getElementById("cards");
-      if (!m) {
-        el.innerHTML = '<div class="card err">Noch zu wenig Innen-Daten für eine Schätzung.<br><small>'
-          + (indoorHours||0) + ' Stunden Innentemp im Archiv — braucht mehr Historie.</small></div>';
-        return;
-      }
+      const nIn = d.indoor_hours || 0;
+      const tin = d.t_in ? lastNonNull(d.t_in) : null;
+      const tout = d.t_out ? lastNonNull(d.t_out) : null;
+      const span = d.time && d.time.length ? (d.time[d.time.length-1]-d.time[0])/86400 : 0;
       const items = [
-        ["Zeitkonstante τ", fmtNum(m.tau_d,1) + " d", "= " + fmtNum(m.tau_h,0) + " h"],
-        ["UA₀", fmtNum(m.UA0,0) + " W/K", "bei C≈86 kWh/K"],
-        ["Wind-Anteil", fmtNum(m.kwind,1) + " W/K", "je km/h"],
-        ["Solarfläche A_eff", fmtNum(m.Aeff,1) + " m²", "effektiv"],
-        ["Fit R²", fmtNum(m.r2_step,3), "1-Schritt"],
-        ["RMSE", fmtNum(m.rmse_step,3) + " K/h", m.n + " Stundenpaare"],
-        ["Innen-Historie", (indoorHours||0) + " h", "≈ " + fmtNum((indoorHours||0)/24,1) + " Tage"],
+        ["Innen aktuell", fmt(tin,1)+" °C", "Wohnzimmer"],
+        ["Außen aktuell", fmt(tout,1)+" °C", "Open-Meteo"],
+        ["Innen-Historie", nIn+" h", "≈ "+fmt(nIn/24,1)+" Tage"],
+        ["Archiv-Spanne", fmt(span,1)+" d", (d.time?d.time.length:0)+" Stunden"],
       ];
       el.innerHTML = items.map(([t,v,s]) =>
         `<div class="card"><small>${t}</small><b>${v}</b><small>${s}</small></div>`).join("");
-      document.getElementById("status").textContent =
-        "Stand: " + (updated||"–") + " · UA(wind) = UA₀ + Wind-Anteil·v";
     }
 
-    function draw(d) {
-      const data = [d.time, d.t_in, d.t_model, d.t_out, d.solar, d.wind];
+    function draw(d){
+      const data = [d.time, d.t_in, d.t_out, d.solar, d.wind];
       const w = Math.max(320, document.getElementById("chart").clientWidth || 900);
       const opts = {
-        width: w, height: 420,
-        scales: { x:{time:true}, C:{}, sun:{}, wind:{} },
-        series: [
+        width:w, height:420,
+        scales:{ x:{time:true}, C:{}, sun:{}, wind:{} },
+        series:[
           {},
-          {label:"Innen (gemessen)", scale:"C", stroke:"#c0392b", width:2, spanGaps:false},
-          {label:"Innen (Modell)",   scale:"C", stroke:"#c0392b", width:1, dash:[6,4], spanGaps:false},
-          {label:"Außen",            scale:"C", stroke:"#2980b9", width:1, spanGaps:false},
-          {label:"Sonne W/m²",       scale:"sun", stroke:"#e69510", width:1, spanGaps:false},
-          {label:"Wind km/h",        scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:false},
+          {label:"Innen (gemessen)", scale:"C", stroke:"#c0392b", width:2, spanGaps:true},
+          {label:"Außen",            scale:"C", stroke:"#2980b9", width:1, spanGaps:true},
+          {label:"Sonne W/m²",       scale:"sun", stroke:"#e69510", width:1, spanGaps:true},
+          {label:"Wind km/h",        scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:true},
         ],
-        axes: [
-          {},
-          {scale:"C", label:"°C"},
-          {scale:"sun", side:1, label:"W/m²", grid:{show:false}},
-        ],
+        axes:[ {}, {scale:"C", label:"°C"}, {scale:"sun", side:1, label:"W/m²", grid:{show:false}} ],
       };
       document.getElementById("chart").innerHTML = "";
       const u = new uPlot(opts, data, document.getElementById("chart"));
-      window.addEventListener("resize", () => u.setSize({width: Math.max(320, document.getElementById("chart").clientWidth), height:420}));
+      window.addEventListener("resize", () =>
+        u.setSize({width:Math.max(320,document.getElementById("chart").clientWidth), height:420}));
     }
 
-    fetch("api/data").then(r => r.json()).then(d => {
+    fetch("api/data").then(r=>r.json()).then(d=>{
       const h = d.ha_debug || {};
       document.getElementById("hadbg").textContent =
-        "HA-History: Status " + (h.status ?? "–") + " · Rohpunkte " + (h.raw ?? "–")
-        + " · → " + (h.hours ?? 0) + " Std · Sensor " + (h.sensor || "?");
-      cards(d.model, d.indoor_hours, d.updated);
-      if (d.status !== "ok") {
+        "HA-History: Status "+(h.status??"–")+" · Rohpunkte "+(h.raw??"–")
+        +" · → "+(h.hours??0)+" Std · Sensor "+(h.sensor||"?");
+      if (d.status !== "ok"){
         document.getElementById("status").textContent =
-          "Status: " + (d.status || "?") + " — erster Abruf läuft, Seite in ~20 s neu laden.";
+          "Status: "+(d.status||"?")+" — erster Abruf läuft, Seite in ~20 s neu laden.";
         return;
       }
-      if (!d.time || d.time.length === 0) {
+      summary(d);
+      if (!d.time || d.time.length===0){
         document.getElementById("status").textContent = "Status: ok — aber keine Daten im Archiv.";
         return;
       }
+      document.getElementById("status").textContent = "Stand: "+(d.updated||"–");
       draw(d);
-    }).catch(e => {
+    }).catch(e=>{
       document.getElementById("status").innerHTML = '<span class="err">Fehler beim Laden: '+e+'</span>';
     });
   </script>

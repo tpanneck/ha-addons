@@ -16,7 +16,8 @@
 (def port (Integer/parseInt (or (System/getenv "INGRESS_PORT") "8099")))
 (def token (System/getenv "SUPERVISOR_TOKEN"))
 (def api-base "http://supervisor/core/api")
-(def archive-file (or (System/getenv "ARCHIVE_FILE") "/data/archive.csv"))
+;; /share ueberlebt auch Deinstallieren (anders als /data).
+(def archive-file (or (System/getenv "ARCHIVE_FILE") "/share/aqua-skeleton/archive.csv"))
 (def C-assumed-wh 86000.0) ;; angenommene Waermekapazitaet ~86 kWh/K (aus Heizplan) - zum Umrechnen
 
 (defn options []
@@ -247,16 +248,13 @@
 
 (defn refresh! []
   (println "[aqua] Archiv-Update laeuft...")
+  ;; Modell bewusst GEPARKT (im Sommer nicht identifizierbar) - nur Daten laden + zeigen.
   (let [arch (build-archive)
-        model (fit-model arch)
-        series (attach-model (archive->rows arch) model)
+        series (attach-model (archive->rows arch) nil)
         n-in (count (filter (comp :t_in val) arch))]
-    (reset! state {:status "ok" :archive arch :model model :series series
+    (reset! state {:status "ok" :archive arch :model nil :series series
                    :indoor-hours n-in :updated (str (java.time.OffsetDateTime/now))})
-    (println (str "[aqua] fertig: " (count arch) " Stunden im Archiv, "
-                  n-in " mit Innentemp"
-                  (when model (str "; tau=" (format "%.1f" (double (:tau-d model))) " d, R2="
-                                   (format "%.3f" (double (:r2-step model)))))))))
+    (println (str "[aqua] fertig: " (count arch) " Stunden im Archiv, " n-in " mit Innentemp"))))
 
 ;; ---------- Web ----------
 (defn series->json []
