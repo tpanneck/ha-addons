@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+- Fix: Options-Default c_mj als Float (290.0) statt Ganzzahl (290) - int/float-Mismatch
+  gegen das float-Schema konnte das Update abbrechen lassen.
+
 ## 0.5.1
 - Thermisches Modell live: Trajektorien-Fit ueber Stundenraster -> τ (gemessen, R²),
   W/K = C/τ (C = Masse als Eingabe/Anker, Option c_mj), Kacheln mit τ/W/K/C/R².
