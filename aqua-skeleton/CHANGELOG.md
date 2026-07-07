@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+- Korrelations-Sektion zeigt jetzt die *interessanten* Zusammenhänge als Streudiagramme:
+  T→q (Sorption) und T→RH (Thermometer), plus die Kreuzkorrelation Außen→Innen (Verzug).
+
 ## 0.8.0
 - Umbau in 4 thematische Grafiken mit je Kacheln + Erklärtext: Temperatur, relative
   Feuchte (+ Schimmel-Schwelle), absolute Feuchte, Korrelationen.

@@ -53,10 +53,16 @@
 
   <div class="section">
     <h2>4 · Korrelationen</h2>
-    <p class="expl">Kreuzkorrelation Außen→Innen über den Verzug: das <b>Maximum bei einem Verzug &gt; 0</b>
-       ist die thermische Trägheit. Daraus (Tages-Amplitudendämpfung) ein <b>zweites, unabhängiges τ</b>
-       — es sieht die schnelle Oberflächenmasse und ist meist kleiner als das Abkling-τ.</p>
-    <div id="c4cards" class="cards"></div><div id="c4" class="chart"></div>
+    <p class="expl"><b>Streudiagramme</b> zeigen die eigentlichen Zusammenhänge:
+       <b>T↔q</b> (Sorption: warme Wand ⇒ mehr Wasser in der Luft) und <b>T↔RH</b> (Thermometer-Effekt).
+       Darunter die <b>Kreuzkorrelation Außen→Innen über den Verzug</b> — Peak bei Verzug&nbsp;&gt;&nbsp;0 = thermische Trägheit,
+       daraus ein <b>zweites, unabhängiges τ</b> (schnelle Oberflächenmasse).</p>
+    <div id="c4cards" class="cards"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:1rem">
+      <div id="c4a" style="flex:1;min-width:300px"></div>
+      <div id="c4b" style="flex:1;min-width:300px"></div>
+    </div>
+    <div id="c4" class="chart" style="margin-top:.6rem"></div>
   </div>
 
   <details style="margin-top:1rem"><summary class="muted" style="cursor:pointer">Alle <code>sensor.*</code> der Box</summary>
@@ -66,6 +72,8 @@
   <script>
     const fmt=(v,d=1)=>(v==null||isNaN(v))?"–":Number(v).toFixed(d);
     const lastNN=a=>{ if(!a) return null; for(let i=a.length-1;i>=0;i--) if(a[i]!=null) return a[i]; return null; };
+    const scatter=(xs,ys)=>{ const p=[]; if(xs&&ys) for(let i=0;i<xs.length;i++) if(xs[i]!=null&&ys[i]!=null) p.push([xs[i],ys[i]]);
+      p.sort((a,b)=>a[0]-b[0]); return [p.map(e=>e[0]),p.map(e=>e[1])]; };
     const cards=(el,items)=>{ document.getElementById(el).innerHTML =
       items.map(([t,v,s])=>`<div class="card"><small>${t}</small><b>${v}</b><small>${s||""}</small></div>`).join(""); };
     const charts={};
@@ -141,14 +149,25 @@
       const xc=t.xcorr||[]; const lags=xc.map(p=>p.lag), rs=xc.map(p=>p.r);
       const peak=xc.reduce((a,p)=>p.r>a.r?p:a,{lag:0,r:-2});
       cards("c4cards",[
-        ["corr(T,RH)", fmt(c.t_rh,2), "innen"],
-        ["corr(T,q)", fmt(c.t_q,2), "innen (Sorption)"],
-        ["corr(Außen→Innen)", fmt(c.tout_tin,2), "Verzug-Peak "+peak.lag+" h"],
-        ["Dämpfung", fmt(t.damp,0)+"×", "Tagesamplitude"],
-        ["τ Tagesdämpfung", fmt(t.tau_daily,1)+" d", "schnelle Masse"],
+        ["corr(T,q) innen", fmt(c.t_q,2), "Sorption"],
+        ["corr(T,RH) innen", fmt(c.t_rh,2), "Thermometer"],
+        ["corr(Außen→Innen)", fmt(c.tout_tin,2), "Peak "+peak.lag+" h Verzug"],
+        ["Dämpfung", fmt(t.damp,0)+"×", "Tagesamplitude außen/innen"],
+        ["τ Tagesdämpfung", fmt(t.tau_daily,1)+" d", "schnelle Oberflächenmasse"],
       ]);
-      if(lags.length) chart("c4","c4",{height:240,scales:{x:{time:false},r:{range:[-1,1]}},
-        series:[{label:"Verzug (h)"},{label:"Korrelation Außen→Innen",scale:"r",stroke:"#8e44ad",width:2}],
+      chart("c4a","c4a",{height:280,title:"T innen → q innen (r="+fmt(c.t_q,2)+")",
+        scales:{x:{time:false},y:{}},
+        series:[{label:"T [°C]"},{label:"q [g/m³]",scale:"y",stroke:"#16a085",width:0,points:{show:true,size:4}}],
+        axes:[{label:"T innen [°C]"},{scale:"y",label:"q [g/m³]"}]},
+        scatter(d.t_in,d.q_in));
+      chart("c4b","c4b",{height:280,title:"T innen → RH innen (r="+fmt(c.t_rh,2)+")",
+        scales:{x:{time:false},y:{}},
+        series:[{label:"T [°C]"},{label:"RH [%]",scale:"y",stroke:"#e67e22",width:0,points:{show:true,size:4}}],
+        axes:[{label:"T innen [°C]"},{scale:"y",label:"RH [%]"}]},
+        scatter(d.t_in,d.rh_in));
+      if(lags.length) chart("c4","c4",{height:220,title:"Kreuzkorrelation Außen→Innen über Verzug",
+        scales:{x:{time:false},r:{range:[-1,1]}},
+        series:[{label:"Verzug (h)"},{label:"r",scale:"r",stroke:"#8e44ad",width:2}],
         axes:[{label:"Verzug [h]"},{scale:"r",label:"r"}]},
         [lags,rs]);
     }
