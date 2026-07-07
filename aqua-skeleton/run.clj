@@ -438,15 +438,26 @@
   (when (and tm (:a tm))
     (try
       (let [{:keys [a b g]} tm
-            last-in (last (filter :t_in (archive->rows arch)))]
+            rows (archive->rows arch)
+            in-rows (filter :t_in rows)
+            last-in (last in-rows)]
         (when last-in
           (let [e0 (:e last-in) t0 (double (:t_in last-in))
+                om (into {} (map (fn [r] [(:e r) r]) rows))
+                ;; g so korrigieren, dass die Prognose-Anfangssteigung = zuletzt beobachtete Steigung
+                ;; (~letzte 8 h) -> C1-stetiger Anschluss, kein Knick durch historisch verzerrtes g.
+                prev (last (filter #(<= (:e %) (- e0 (* 8 3600))) in-rows))
+                obs-slope (when (and prev (> (:e prev) 0)) (/ (- t0 (:t_in prev)) (/ (- e0 (:e prev)) 3600.0)))
+                tout0 (get-in om [e0 :t_out]) solar0 (or (get-in om [e0 :solar]) 0.0)
+                model-slope (when tout0 (+ (* a (- tout0 t0)) (* b solar0) g))
+                g-eff (if (and obs-slope model-slope (< (Math/abs (double obs-slope)) 2.0))
+                        (+ g (- obs-slope model-slope)) g)
                 fut (take 120 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
             (when (seq fut)
               (loop [fs fut tprev t0 acc []]
-                (if (empty? fs) acc   ;; acc ist bereits vorwaerts (aufsteigende Zeit) - NICHT reversen
+                (if (empty? fs) acc   ;; vorwaerts (aufsteigende Zeit)
                     (let [f (first fs)
-                          tn (+ tprev (* a (- (:t_out f) tprev)) (* b (:solar f)) g)]
+                          tn (+ tprev (* a (- (:t_out f) tprev)) (* b (:solar f)) g-eff)]
                       (recur (rest fs) tn (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})))))))))
       (catch Exception e (println "[aqua] forecast Fehler:" (.getMessage e)) nil))))
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.3
+- Prognose schliesst jetzt C1-stetig an (kein Steigungs-Knick): g wird so korrigiert, dass
+  die Anfangssteigung der zuletzt beobachteten entspricht (statt historisch verzerrtem g-Drift).
+
 ## 0.10.2
 - FIX: Prognose kam rueckwaerts raus (falsches reverse) -> Zeitstempel liefen absteigend,
   Kachel zeigte "bis heute", Chart clippte. Jetzt aufsteigend, reicht 5 Tage in die Zukunft.
