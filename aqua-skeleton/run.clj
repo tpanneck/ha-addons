@@ -27,6 +27,7 @@
 (def lon    (or (:longitude opts) 11.77))
 (def sensor (or (:sensor opts) "sensor.wohnzimmer_shelly_2_temperatur"))
 (def history-days (int (or (:days opts) 14)))  ;; nur so viel Historie lesen, wie sinnvoll da ist
+(def c-mj-estimate (double (or (:c_mj opts) 290.0)))  ;; Speichermasse C [MJ/K] (physikal. Anker); W/K = C/tau
 
 ;; ---------- lineare Algebra (verifiziert) ----------
 (defn solve-linear [A b]
@@ -267,6 +268,71 @@
                 r' (assoc r :tm tm)]
             (recur (rest rs) r' (conj acc r'))))))))
 
+;; ---------- Thermisches Modell: Trajektorien-Fit (tau) + Rueckwaerts-Projektion ----------
+(defn interp-at [pts t]
+  (let [f (first pts) l (last pts)]
+    (cond (<= t (first f)) (second f)
+          (>= t (first l)) (second l)
+          :else (loop [a f more (rest pts)]
+                  (let [b (first more)]
+                    (if (and (<= (first a) t) (<= t (first b)))
+                      (+ (second a) (* (/ (- t (first a)) (double (- (first b) (first a))))
+                                       (- (second b) (second a))))
+                      (recur b (rest more))))))))
+
+(defn thermal-model
+  "Free-run-RC ueber Stundenraster: dT/dt = a*(Tout-T) + b*Solar + g.
+   a per Grid-Suche, b,g per OLS. tau=1/a. C = W/K * tau. Rueckwaerts-Projektion von letzter Messung."
+  [arch]
+  (try
+    (let [rows (archive->rows arch)
+          in-pts (->> rows (filter :t_in) (map (fn [r] [(:e r) (:t_in r)])) (sort-by first) vec)]
+      (when (>= (count in-pts) 24)
+        (let [e0 (ffirst in-pts) e1 (first (last in-pts))
+              hrs (vec (range e0 (inc e1) 3600))
+              om  (into {} (map (fn [r] [(:e r) r]) rows))
+              tout (mapv #(get-in om [% :t_out]) hrs)
+              sol  (mapv #(or (get-in om [% :solar]) 0.0) hrs)]
+          (when (and (> (count hrs) 48) (every? some? tout))
+            (let [n (count hrs)
+                  tin (mapv #(interp-at in-pts %) hrs)
+                  mean (/ (reduce + tin) n)
+                  sst (reduce + (map #(let [d (- % mean)] (* d d)) tin))
+                  eval-a (fn [a]
+                           (let [al (- 1.0 a)]
+                             (loop [k 0 tb (double (first tin)) ts 0.0 to 0.0 B [] S [] O []]
+                               (if (= k n)
+                                 (let [r (mapv - tin B)
+                                       s11 (reduce + (map * S S)) s12 (reduce + (map * S O)) s22 (reduce + (map * O O))
+                                       sy1 (reduce + (map * S r)) sy2 (reduce + (map * O r))
+                                       det (- (* s11 s22) (* s12 s12))
+                                       [b g] (if (zero? det) [0.0 0.0]
+                                                 [(/ (- (* sy1 s22) (* s12 sy2)) det) (/ (- (* s11 sy2) (* s12 sy1)) det)])
+                                       model (mapv (fn [bb ss oo] (+ bb (* b ss) (* g oo))) B S O)
+                                       sse (reduce + (map #(let [d (- %1 %2)] (* d d)) tin model))]
+                                   {:a a :b b :g g :sse sse})
+                                 (recur (inc k)
+                                        (+ (* al tb) (* a (nth tout k)))
+                                        (+ (* al ts) (nth sol k))
+                                        (+ (* al to) 1.0)
+                                        (conj B tb) (conj S ts) (conj O to))))))
+                  grid (map #(Math/exp %)
+                            (map #(+ (Math/log 0.001) (* % (/ (- (Math/log 0.06) (Math/log 0.001)) 100.0))) (range 101)))
+                  {:keys [a b g sse]} (apply min-key :sse (map eval-a grid))
+                  r2 (if (pos? sst) (- 1.0 (/ sse sst)) 0.0)
+                  back (vec (reverse
+                             (reduce (fn [acc k]
+                                       (conj acc (/ (- (peek acc) (* a (nth tout (dec k)))
+                                                       (* b (nth sol (dec k))) g)
+                                                    (- 1.0 a))))
+                                     [(double (nth tin (dec n)))]
+                                     (range (dec n) 0 -1))))
+                  tau-h (/ 1.0 a) tau-d (/ tau-h 24.0)
+                  wk (/ (* c-mj-estimate 1e6) (* tau-h 3600.0))]   ;; W/K = C / tau
+              {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate
+               :back (zipmap hrs back)})))))
+    (catch Exception e (println "[aqua] thermal-model Fehler:" (.getMessage e)) nil)))
+
 ;; ---------- State / Loop ----------
 (def state (atom {:status "startet..." :archive {} :model nil :series nil}))
 
@@ -275,15 +341,18 @@
   ;; Modell bewusst GEPARKT (im Sommer nicht identifizierbar) - nur Daten laden + zeigen.
   (let [arch (build-archive)
         series (attach-model (archive->rows arch) nil)
+        tm (thermal-model arch)
         in-eps (->> arch (filter (comp :t_in val)) keys (map hour->epoch) (remove nil?) sort)
         n-in (count in-eps)
         span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))]
-    (reset! state {:status "ok" :archive arch :model nil :series series
+    (reset! state {:status "ok" :archive arch :model nil :series series :thermal tm
                    :indoor-hours n-in :indoor-span-days span-d
                    :indoor-from (first in-eps) :indoor-to (last in-eps)
                    :updated (str (java.time.OffsetDateTime/now))})
     (println (str "[aqua] fertig: " (count arch) " Std Archiv, " n-in
-                  " Innen-Punkte ueber " (when span-d (format "%.1f" span-d)) " Tage"))))
+                  " Innen-Punkte ueber " (when span-d (format "%.1f" span-d)) " Tage"
+                  (when tm (format "; tau=%.1f d, W/K=%.0f, C=%.0f MJ/K, R2=%.3f"
+                                   (:tau-d tm) (:wk tm) (:c-mj tm) (:r2 tm)))))))
 
 ;; ---------- Web ----------
 (defn series->json []
@@ -298,6 +367,9 @@
        :solar (mapv #(:solar %) s)
        :wind  (mapv #(:wind %) s)
        :t_model (mapv #(:tm %) s)
+       :t_back (let [tm (:thermal @state)] (when tm (mapv #(get (:back tm) (:e %)) s)))
+       :thermal (when-let [tm (:thermal @state)]
+                  {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)})
        :model m
        :indoor_hours (:indoor-hours @state)
        :indoor_span_days (:indoor-span-days @state)

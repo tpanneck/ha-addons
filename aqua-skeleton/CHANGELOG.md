@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+- Thermisches Modell live: Trajektorien-Fit ueber Stundenraster -> τ (gemessen, R²),
+  W/K = C/τ (C = Masse als Eingabe/Anker, Option c_mj), Kacheln mit τ/W/K/C/R².
+- Rueckwaerts-Kurve: Modell von der letzten Messung rueckwaerts integriert, im Chart
+  ueber die gemessene Innenkurve gelegt (Validierung).
+
 ## 0.5.0
 - Updates laufen jetzt ueber VORGEBAUTE Images aus ghcr.io (GitHub-Action),
   kein lokaler Build mehr auf der Box -> kein Docker-Hub-Rate-Limit, sauberer Pull.

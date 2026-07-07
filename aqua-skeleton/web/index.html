@@ -41,28 +41,38 @@
       const tin = d.t_in ? lastNonNull(d.t_in) : null;
       const tout = d.t_out ? lastNonNull(d.t_out) : null;
       const span = d.time && d.time.length ? (d.time[d.time.length-1]-d.time[0])/86400 : 0;
-      const items = [
+      const items = [];
+      if (d.thermal) {
+        const t = d.thermal;
+        items.push(
+          ["τ (live gemessen)", fmt(t.tau_d,1)+" d", "R² = "+fmt(t.r2,3)],
+          ["W/K = C/τ", fmt(t.wk,0)+" W/K", "aus C + τ, nicht U-Wert"],
+          ["C (Masse)", fmt(t.c_mj,0)+" MJ/K", "Eingabe/Anker"]
+        );
+      }
+      items.push(
         ["Innen aktuell", fmt(tin,1)+" °C", "Wohnzimmer"],
         ["Außen aktuell", fmt(tout,1)+" °C", "Open-Meteo"],
-        ["Innen-Messpunkte", nIn+"", "über "+fmt(d.indoor_span_days,1)+" Tage (sparse)"],
-        ["Archiv-Spanne", fmt(span,1)+" d", (d.time?d.time.length:0)+" Stunden"],
-      ];
+        ["Innen-Messpunkte", nIn+"", "über "+fmt(d.indoor_span_days,1)+" Tage (sparse)"]
+      );
       el.innerHTML = items.map(([t,v,s]) =>
         `<div class="card"><small>${t}</small><b>${v}</b><small>${s}</small></div>`).join("");
     }
 
     function draw(d){
-      const data = [d.time, d.t_in, d.t_out, d.solar, d.wind];
+      const back = d.t_back || d.time.map(()=>null);
+      const data = [d.time, d.t_in, back, d.t_out, d.solar, d.wind];
       const w = Math.max(320, document.getElementById("chart").clientWidth || 900);
       const opts = {
         width:w, height:420,
         scales:{ x:{time:true}, C:{}, sun:{}, wind:{} },
         series:[
           {},
-          {label:"Innen (gemessen)", scale:"C", stroke:"#c0392b", width:2, spanGaps:true},
-          {label:"Außen",            scale:"C", stroke:"#2980b9", width:1, spanGaps:true},
-          {label:"Sonne W/m²",       scale:"sun", stroke:"#e69510", width:1, spanGaps:true},
-          {label:"Wind km/h",        scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:true},
+          {label:"Innen (gemessen)",    scale:"C", stroke:"#c0392b", width:2, spanGaps:true},
+          {label:"Modell (rückwärts)",  scale:"C", stroke:"#8e44ad", width:1.5, dash:[6,4], spanGaps:true},
+          {label:"Außen",               scale:"C", stroke:"#2980b9", width:1, spanGaps:true},
+          {label:"Sonne W/m²",          scale:"sun", stroke:"#e69510", width:1, spanGaps:true},
+          {label:"Wind km/h",           scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:true},
         ],
         axes:[ {}, {scale:"C", label:"°C"}, {scale:"sun", side:1, label:"W/m²", grid:{show:false}} ],
       };
