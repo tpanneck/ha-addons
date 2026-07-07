@@ -1,13 +1,14 @@
-# HA-Add-on-Manifest. Weil kein "image:" angegeben ist, BAUT der Supervisor
-# das Add-on lokal aus dem Dockerfile fuer die Architektur der Box.
+# HA-Add-on-Manifest.
+# Mit "image:" zieht HA ein VORGEBAUTES Image aus ghcr.io (kein lokaler Build,
+# kein Docker-Hub-Rate-Limit) - gebaut von der GitHub-Action .github/workflows/build.yml.
 name: "Aqua Skeleton"
-version: "0.4.4"
+version: "0.5.0"
 slug: "aqua_skeleton"
+image: "ghcr.io/tpanneck/{arch}-aqua_skeleton"
 description: "Thermischer Daten-Monitor: Innen (HA) + Aussen/Sonne/Wind (Open-Meteo), Archiv in /share"
 arch:
   - aarch64
   - amd64
-  - armv7
 init: false
 # Ingress = eigene Web-UI in der HA-Sidebar, ohne offenen Port:
 ingress: true

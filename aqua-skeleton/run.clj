@@ -275,10 +275,15 @@
   ;; Modell bewusst GEPARKT (im Sommer nicht identifizierbar) - nur Daten laden + zeigen.
   (let [arch (build-archive)
         series (attach-model (archive->rows arch) nil)
-        n-in (count (filter (comp :t_in val) arch))]
+        in-eps (->> arch (filter (comp :t_in val)) keys (map hour->epoch) (remove nil?) sort)
+        n-in (count in-eps)
+        span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))]
     (reset! state {:status "ok" :archive arch :model nil :series series
-                   :indoor-hours n-in :updated (str (java.time.OffsetDateTime/now))})
-    (println (str "[aqua] fertig: " (count arch) " Stunden im Archiv, " n-in " mit Innentemp"))))
+                   :indoor-hours n-in :indoor-span-days span-d
+                   :indoor-from (first in-eps) :indoor-to (last in-eps)
+                   :updated (str (java.time.OffsetDateTime/now))})
+    (println (str "[aqua] fertig: " (count arch) " Std Archiv, " n-in
+                  " Innen-Punkte ueber " (when span-d (format "%.1f" span-d)) " Tage"))))
 
 ;; ---------- Web ----------
 (defn series->json []
@@ -295,6 +300,8 @@
        :t_model (mapv #(:tm %) s)
        :model m
        :indoor_hours (:indoor-hours @state)
+       :indoor_span_days (:indoor-span-days @state)
+       :indoor_from (:indoor-from @state) :indoor_to (:indoor-to @state)
        :updated (:updated @state)
        :status (:status @state)
        :ha_debug @ha-debug :sensors @entities})))

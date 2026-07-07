@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+- Updates laufen jetzt ueber VORGEBAUTE Images aus ghcr.io (GitHub-Action),
+  kein lokaler Build mehr auf der Box -> kein Docker-Hub-Rate-Limit, sauberer Pull.
+- Innen-Historie zeigt jetzt den echten Zeitraum aus min/max-Zeitstempel
+  (statt blind Stunden-Buckets zu zaehlen; der Sensor liefert sparse).
+- arch auf aarch64 + amd64 begrenzt (Babashka ist 64-bit).
+
 ## 0.4.4
 - CHANGELOG.md ergaenzt (HA-Add-on-Konvention; behebt "No changelog found").
 

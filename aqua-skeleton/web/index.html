@@ -44,7 +44,7 @@
       const items = [
         ["Innen aktuell", fmt(tin,1)+" °C", "Wohnzimmer"],
         ["Außen aktuell", fmt(tout,1)+" °C", "Open-Meteo"],
-        ["Innen-Historie", nIn+" h", "≈ "+fmt(nIn/24,1)+" Tage"],
+        ["Innen-Messpunkte", nIn+"", "über "+fmt(d.indoor_span_days,1)+" Tage (sparse)"],
         ["Archiv-Spanne", fmt(span,1)+" d", (d.time?d.time.length:0)+" Stunden"],
       ];
       el.innerHTML = items.map(([t,v,s]) =>
