@@ -33,9 +33,12 @@ Sprache: **Babashka** (bb). Basis-Image `babashka/babashka` (amd64 + arm64).
    - „**In Seitenleiste anzeigen**" aktivieren → der Menüpunkt öffnet die Ingress-Seite
      mit „✓ Add-on läuft", Uhrzeit und Uptime.
 
-Wenn das steht, ist der **Deployment-Pfad bewiesen**. Nächster Schritt (eigene Version):
-`homeassistant_api` nutzen → über `http://supervisor/core/api/…` einen Sensor lesen und
-auf der Seite anzeigen.
+## v0.2 — HA-API
+Ab 0.2.0 liest das Add-on über die Supervisor-API einen **Sensor** und zeigt ihn live
+(Seite refresht alle 30 s) plus eine Liste aller Temperatur-Sensoren der Box zur Entdeckung.
+Welcher Sensor angezeigt wird, steht im Tab **Konfiguration** (`sensor:`), Default ist ein
+Ittigen-Temperatursensor. Passenden `entity_id` aus der Liste dort eintragen → Speichern →
+Neustart des Add-ons.
 
 ## Später: Fleet-Verteilung
 Statt lokalem Ordner das Add-on in ein **Git-Repo** legen und in HA als
