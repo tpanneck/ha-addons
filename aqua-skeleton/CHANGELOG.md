@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+- Sektion 4 -> Tages-Analyse-Tabelle (harmonische Regression, 24 h): Amplitude+Phase je
+  Groesse (T/RH innen/aussen), T-Daempfung + Lag, ohne willkuerlichen Detrend.
+- Ehrliche RH-Treiber-Zeile: Innen-RH koppelt an T_innen (Thermometer), nicht an Aussen-RH.
+
+## 0.8.2
+- (uebersprungen)
+
 ## 0.8.1
 - Korrelations-Sektion zeigt jetzt die *interessanten* Zusammenhänge als Streudiagramme:
   T→q (Sorption) und T→RH (Thermometer), plus die Kreuzkorrelation Außen→Innen (Verzug).

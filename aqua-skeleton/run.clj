@@ -197,6 +197,35 @@
             sy (Math/sqrt (reduce + (map #(let [d (- % my)] (* d d)) ys)))]
         (when (and (pos? sx) (pos? sy)) (/ cov (* sx sy)))))))
 
+(defn solve-lin [A b]  ;; Gauss mit Teilpivot
+  (let [k (count A)
+        M0 (mapv (fn [row bi] (conj (vec (map double row)) (double bi))) A b)
+        M (loop [M M0 i 0]
+            (if (= i k) M
+                (let [p (apply max-key (fn [r] (Math/abs (double (get-in M [r i])))) (range i k))
+                      M (if (= p i) M (-> M (assoc i (M p)) (assoc p (M i))))
+                      pv (double ((M i) i))
+                      M (reduce (fn [M r] (let [f (/ (double ((M r) i)) pv)]
+                                            (assoc M r (mapv #(- (double %1) (* f (double %2))) (M r) (M i)))))
+                                M (range (inc i) k))]
+                  (recur M (inc i)))))]
+    (reduce (fn [x r] (let [row (M r) s (reduce + 0.0 (map (fn [j] (* (double (row j)) (x j))) (range (inc r) k)))]
+                        (assoc x r (/ (- (double (row k)) s) (double (row r))))))
+            (vec (repeat k 0.0)) (range (dec k) -1 -1))))
+
+(defn harmonic-fit
+  "Tages-Harmonische per Regression: y = c0+c1 t+c2 t^2 + A cos(wt)+B sin(wt).
+   Liefert {:amp sqrt(A^2+B^2) :phase Stunde-des-Maximums}. Kein willkuerlicher Detrend."
+  [ser]
+  (when (and (sequential? ser) (> (count ser) 30) (every? some? ser))
+    (let [n (count ser) w (/ (* 2 Math/PI) 24.0)
+          X (mapv (fn [kk] [1.0 (double kk) (* (double kk) (double kk)) (Math/cos (* w kk)) (Math/sin (* w kk))]) (range n))
+          xtx (vec (for [i (range 5)] (vec (for [j (range 5)] (reduce + (map (fn [r] (* (nth r i) (nth r j))) X))))))
+          xty (vec (for [i (range 5)] (reduce + (map (fn [r y] (* (nth r i) y)) X ser))))
+          beta (solve-lin xtx xty)
+          A (nth beta 3) B (nth beta 4)]
+      {:amp (Math/sqrt (+ (* A A) (* B B))) :phase (mod (/ (Math/atan2 B A) w) 24.0)})))
+
 ;; ---------- Archiv (CSV in /share) ----------
 (defn read-archive []
   (try
@@ -322,6 +351,9 @@
           (when (and (> (count hrs) 48) (every? some? tout))
             (let [n (count hrs)
                   tin (mapv #(interp-at in-pts %) hrs)
+                  rh-in-pts (->> rows (filter :rh_in) (map (fn [r] [(:e r) (:rh_in r)])) (sort-by first) vec)
+                  rhin (when (>= (count rh-in-pts) 12) (mapv #(interp-at rh-in-pts %) hrs))
+                  rhout (mapv #(get-in om [% :rh_out]) hrs)
                   mean (/ (reduce + tin) n)
                   sst (reduce + (map #(let [d (- % mean)] (* d d)) tin))
                   eval-a (fn [a]
@@ -367,9 +399,27 @@
                   xcorr (vec (for [lag (range 0 25)]
                                (let [ps (map (fn [k] [(nth tout (- k lag)) (nth tin k)]) (range lag n))
                                      cov (reduce + (map (fn [[o i]] (* (- o mo) (- i mi))) ps))]
-                                 {:lag lag :r (if (and (pos? si) (pos? so)) (/ cov (* si so)) 0.0)})))]
+                                 {:lag lag :r (if (and (pos? si) (pos? so)) (/ cov (* si so)) 0.0)})))
+                  ;; Autokorrelation (ACF): corr(T(t), T(t+lag)) ueber den Verzug
+                  acf (fn [ser]
+                        (let [m (/ (reduce + ser) (count ser))
+                              dev (mapv #(- % m) ser)
+                              denom (reduce + (map #(* % %) dev))
+                              maxlag (min 120 (quot (count ser) 2))]
+                          (vec (for [L (range 0 (inc maxlag))]
+                                 {:lag L :r (if (pos? denom)
+                                              (/ (reduce + (map * dev (drop L dev))) denom) 0.0)}))))
+                  acf-in (acf tin) acf-out (acf tout)
+                  ;; Tages-Analyse (harmonische Regression, 24 h)
+                  h-tin (harmonic-fit tin) h-tout (harmonic-fit tout)
+                  h-rhin (harmonic-fit rhin) h-rhout (harmonic-fit rhout)
+                  daily {:t_in h-tin :t_out h-tout :rh_in h-rhin :rh_out h-rhout
+                         :t_damp (when (and h-tin h-tout (pos? (:amp h-tin))) (/ (:amp h-tout) (:amp h-tin)))
+                         :t_lag  (when (and h-tin h-tout) (mod (- (:phase h-tin) (:phase h-tout)) 24.0))
+                         :rh_damp (when (and h-rhin h-rhout (pos? (:amp h-rhin))) (/ (:amp h-rhout) (:amp h-rhin)))}]
               {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate
                :tau-daily tau-daily :damp damp :a-in a-in :a-out a-out :xcorr xcorr
+               :acf-in acf-in :acf-out acf-out :daily daily
                :back (zipmap hrs back)})))))
     (catch Exception e (println "[aqua] thermal-model Fehler:" (.getMessage e)) nil)))
 
@@ -409,7 +459,8 @@
         pr (fn [fx fy] (let [ps (keep (fn [r] (let [x (fx r) y (fy r)]
                                                 (when (and (some? x) (some? y)) [x y]))) s)]
                          (when (seq ps) (pearson (mapv first ps) (mapv second ps)))))
-        corr {:t_rh (pr :t_in :rh_in) :t_q (pr :t_in q-of) :tout_tin (pr :t_out :t_in)}]
+        corr {:t_rh (pr :t_in :rh_in) :t_q (pr :t_in q-of) :tout_tin (pr :t_out :t_in)
+              :rh_in_out (pr :rh_in :rh_out)}]
     (if (empty? s)
       {:time [] :status (:status @state) :days days :ha_debug @ha-debug :sensors @entities}
       {:time  (mapv :e s)
@@ -425,7 +476,8 @@
        :rh_out (mapv :rh_out s)
        :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)
                           :tau_daily (:tau-daily tm) :damp (:damp tm)
-                          :a_in (:a-in tm) :a_out (:a-out tm) :xcorr (:xcorr tm)})
+                          :a_in (:a-in tm) :a_out (:a-out tm) :xcorr (:xcorr tm)
+                          :acf_in (:acf-in tm) :acf_out (:acf-out tm) :daily (:daily tm)})
        :corr corr
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
