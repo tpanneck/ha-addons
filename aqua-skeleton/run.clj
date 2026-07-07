@@ -98,6 +98,7 @@
 
 ;; Diagnose des letzten HA-History-Aufrufs (Status + Rohpunkte), sichtbar auf der Seite.
 (def ha-debug (atom {}))
+(def entities (atom []))   ;; alle Sensor-Entities aus /states (Discovery)
 
 (defn ha-get-raw [path]
   (with-timeout 20000
@@ -109,42 +110,62 @@
                {:status -1 :error (.getMessage e)})))))
 
 ;; ---------- Datenquellen ----------
-(defn current-indoor
-  "Aktueller Messwert ueber den bewiesenen /states-Weg (garantiert erreichbar)."
-  []
-  (let [resp (ha-get-raw (str "/states/" sensor))
-        body (when (= 200 (:status resp))
-               (try (json/parse-string (:body resp) true) (catch Exception _ nil)))
-        v (some-> body :state num?)
-        h (some-> body (#(iso->hour (or (:last_changed %) (:last_updated %)))))]
-    {:status (:status resp) :map (when (and v h) {h v})}))
+(defn hist-probe [path]
+  (let [resp (ha-get-raw path)
+        body-str (str (:body resp))
+        states (first (try (json/parse-string body-str true) (catch Exception _ nil)))]
+    {:status (:status resp) :raw (if (sequential? states) (count states) 0)
+     :states states :body body-str}))
+
+(defn states->hourly [states]
+  (when (sequential? states)
+    (->> states
+         (keep (fn [s] (when-let [v (num? (:state s))]
+                         (when-let [h (iso->hour (or (:last_changed s) (:last_updated s)))] [h v]))))
+         (group-by first)
+         (map (fn [[h pairs]] [h (/ (reduce + (map second pairs)) (count pairs))]))
+         (into {}))))
 
 (defn indoor-hourly
-  "Innentemperatur stuendlich: History-Backfill (best effort) + aktueller /states-Wert."
+  "Innentemperatur: History-Backfill (zwei Proben) + aktueller /states-Wert.
+   Fuellt nebenbei die Sensor-Liste (Discovery aus /states)."
   []
   (let [start (-> (java.time.Instant/now)
                   (.truncatedTo java.time.temporal.ChronoUnit/SECONDS)
                   (.minusSeconds (* history-days 86400)) .toString)
-        path (str "/history/period/" start "?filter_entity_id=" sensor "&minimal_response")
-        resp (ha-get-raw path)
-        body-str (str (:body resp))
-        body (when (= 200 (:status resp)) (try (json/parse-string body-str true) (catch Exception _ nil)))
-        states (first body)
-        raw (if (sequential? states) (count states) 0)
-        hist (when (sequential? states)
-               (->> states
-                    (keep (fn [s] (when-let [v (num? (:state s))]
-                                    (when-let [h (iso->hour (or (:last_changed s) (:last_updated s)))] [h v]))))
-                    (group-by first)
-                    (map (fn [[h pairs]] [h (/ (reduce + (map second pairs)) (count pairs))]))
-                    (into {})))
-        cur (current-indoor)
-        merged (merge (or hist {}) (:map cur))]
-    (reset! ha-debug {:hist-status (:status resp) :hist-raw raw
-                      :states-status (:status cur) :hours (count merged) :sensor sensor
-                      :body (subs body-str 0 (min 220 (count body-str)))})
-    (println (str "[aqua] History status=" (:status resp) " raw=" raw
-                  " | states status=" (:status cur) " -> Stunden=" (count merged)))
+        pa (hist-probe (str "/history/period/" start "?filter_entity_id=" sensor "&minimal_response"))
+        pb (hist-probe (str "/history/period?filter_entity_id=" sensor "&minimal_response"))
+        ;; Probe C: ganzer Recorder (letzter Tag, alle Entities) - zaehlt Einträge global
+        pc-resp (ha-get-raw "/history/period?minimal_response")
+        pc-parsed (when (= 200 (:status pc-resp))
+                    (try (json/parse-string (str (:body pc-resp)) true) (catch Exception _ nil)))
+        rec-entities (if (sequential? pc-parsed) (count pc-parsed) 0)
+        rec-points (if (sequential? pc-parsed)
+                     (reduce + 0 (map #(if (sequential? %) (count %) 0) pc-parsed)) 0)
+        hist (states->hourly (if (> (:raw pa) 0) (:states pa) (:states pb)))
+        ;; /states: aktueller Wert + komplette Sensor-Liste
+        rs (ha-get-raw "/states")
+        all (when (= 200 (:status rs)) (try (json/parse-string (str (:body rs)) true) (catch Exception _ nil)))
+        sensors (when (sequential? all)
+                  (->> all
+                       (filter #(str/starts-with? (str (:entity_id %)) "sensor."))
+                       (mapv (fn [s] {:id (:entity_id s) :state (:state s)
+                                      :unit (get-in s [:attributes :unit_of_measurement])}))
+                       (sort-by :id) vec))
+        cur (some (fn [s] (when (= (:entity_id s) sensor) s)) all)
+        cur-map (when cur (when-let [v (num? (:state cur))]
+                            (when-let [h (iso->hour (or (:last_changed cur) (:last_updated cur)))] {h v})))
+        merged (merge (or hist {}) cur-map)]
+    (reset! entities (or sensors []))
+    (reset! ha-debug {:histA-status (:status pa) :histA-raw (:raw pa)
+                      :histB-status (:status pb) :histB-raw (:raw pb)
+                      :recorder-entities rec-entities :recorder-points rec-points
+                      :states-status (:status rs) :sensor-count (count sensors)
+                      :hours (count merged) :sensor sensor
+                      :body (subs (:body pa) 0 (min 140 (count (:body pa))))})
+    (println (str "[aqua] histA=" (:raw pa) " histB=" (:raw pb)
+                  " recorder=" rec-entities "E/" rec-points "P"
+                  " states=" (:status rs) " sensors=" (count sensors) " -> Std=" (count merged)))
     merged))
 
 (defn parse-hourly [h]
@@ -276,7 +297,7 @@
         m (:model @state)]
     (if (empty? s)
       {:time [] :model m :status (:status @state) :indoor_hours (:indoor-hours @state)
-       :ha_debug @ha-debug}
+       :ha_debug @ha-debug :sensors @entities}
       {:time  (mapv :e s)
        :t_in  (mapv #(:t_in %) s)
        :t_out (mapv #(:t_out %) s)
@@ -287,7 +308,7 @@
        :indoor_hours (:indoor-hours @state)
        :updated (:updated @state)
        :status (:status @state)
-       :ha_debug @ha-debug})))
+       :ha_debug @ha-debug :sensors @entities})))
 
 (defn read-web [f ct]
   (try {:status 200 :headers {"Content-Type" ct} :body (slurp (str "web/" f))}

@@ -23,7 +23,11 @@
   <div id="hadbg" class="muted" style="font-size:.8rem"></div>
   <div id="cards" class="cards"></div>
   <div id="chart"></div>
-  <p class="muted">Innen = Messung (HA-Recorder, archiviert in /share) · Außen/Sonne/Wind = Open-Meteo.
+  <details id="sensorbox" style="margin-top:1rem">
+    <summary class="muted" style="cursor:pointer">Alle <code>sensor.*</code>-Entities der Box (aus /states)</summary>
+    <div id="sensors" class="muted" style="font-size:.8rem;margin-top:.4rem"></div>
+  </details>
+  <p class="muted">Innen = Messung (HA /states, archiviert in /share) · Außen/Sonne/Wind = Open-Meteo.
      Serien in der Legende an/aus klickbar. (Modell-Schätzung ist geparkt — im Sommer nicht aussagekräftig.)</p>
 
   <script src="uPlot.iife.min.js"></script>
@@ -71,10 +75,18 @@
     fetch("api/data").then(r=>r.json()).then(d=>{
       const h = d.ha_debug || {};
       document.getElementById("hadbg").innerHTML =
-        "History: Status "+(h["hist-status"]??"–")+" · Rohpunkte "+(h["hist-raw"]??"–")
-        +" | /states: Status "+(h["states-status"]??"–")
-        +" | → "+(h.hours??0)+" Std · Sensor "+(h.sensor||"?")
+        "History A (mit ts): Status "+(h["histA-status"]??"–")+" · Einträge "+(h["histA-raw"]??"–")
+        +" &nbsp;|&nbsp; History B (ohne ts): Status "+(h["histB-status"]??"–")+" · Einträge "+(h["histB-raw"]??"–")
+        +"<br>Recorder gesamt (letzter Tag): "+(h["recorder-entities"]??"–")+" Entities · "+(h["recorder-points"]??"–")+" Punkte"
+        +" &nbsp;|&nbsp; /states: Status "+(h["states-status"]??"–")+" · "+(h["sensor-count"]??0)+" Sensoren"
+        +" &nbsp;|&nbsp; Archiv-Innen "+(h.hours??0)+" Std"
         +(h.body ? "<br><code style='font-size:.72rem'>"+String(h.body).replace(/</g,"&lt;")+"</code>" : "");
+      const sb = document.getElementById("sensors");
+      if (d.sensors && d.sensors.length)
+        sb.innerHTML = "<table><tr><th>entity_id</th><th>Wert</th></tr>"
+          + d.sensors.map(s=>`<tr><td><code>${s.id}</code></td><td>${s.state??"–"} ${s.unit||""}</td></tr>`).join("")
+          + "</table>";
+      else sb.textContent = "keine Sensoren geladen";
       if (d.status !== "ok"){
         document.getElementById("status").textContent =
           "Status: "+(d.status||"?")+" — erster Abruf läuft, Seite in ~20 s neu laden.";
