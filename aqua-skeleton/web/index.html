@@ -75,12 +75,9 @@
     fetch("api/data").then(r=>r.json()).then(d=>{
       const h = d.ha_debug || {};
       document.getElementById("hadbg").innerHTML =
-        "History A (mit ts): Status "+(h["histA-status"]??"–")+" · Einträge "+(h["histA-raw"]??"–")
-        +" &nbsp;|&nbsp; History B (ohne ts): Status "+(h["histB-status"]??"–")+" · Einträge "+(h["histB-raw"]??"–")
-        +"<br>Recorder gesamt (letzter Tag): "+(h["recorder-entities"]??"–")+" Entities · "+(h["recorder-points"]??"–")+" Punkte"
+        "History ("+(h.days??"?")+" Tage): Status "+(h["hist-status"]??"–")+" · Einträge "+(h["hist-raw"]??"–")
         +" &nbsp;|&nbsp; /states: Status "+(h["states-status"]??"–")+" · "+(h["sensor-count"]??0)+" Sensoren"
-        +" &nbsp;|&nbsp; Archiv-Innen "+(h.hours??0)+" Std"
-        +(h.body ? "<br><code style='font-size:.72rem'>"+String(h.body).replace(/</g,"&lt;")+"</code>" : "");
+        +" &nbsp;|&nbsp; Archiv-Innen "+(h.hours??0)+" Std";
       const sb = document.getElementById("sensors");
       if (d.sensors && d.sensors.length)
         sb.innerHTML = "<table><tr><th>entity_id</th><th>Wert</th></tr>"

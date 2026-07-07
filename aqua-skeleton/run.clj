@@ -127,22 +127,15 @@
          (into {}))))
 
 (defn indoor-hourly
-  "Innentemperatur: History-Backfill (zwei Proben) + aktueller /states-Wert.
-   Fuellt nebenbei die Sensor-Liste (Discovery aus /states)."
+  "Innentemperatur ueber HAs History mit start UND end_time (sonst nur 1-Tag-Fenster ab start!)
+   + aktueller /states-Wert. Fuellt nebenbei die Sensor-Liste (Discovery aus /states)."
   []
-  (let [start (-> (java.time.Instant/now)
-                  (.truncatedTo java.time.temporal.ChronoUnit/SECONDS)
-                  (.minusSeconds (* history-days 86400)) .toString)
-        pa (hist-probe (str "/history/period/" start "?filter_entity_id=" sensor "&minimal_response"))
-        pb (hist-probe (str "/history/period?filter_entity_id=" sensor "&minimal_response"))
-        ;; Probe C: ganzer Recorder (letzter Tag, alle Entities) - zaehlt Einträge global
-        pc-resp (ha-get-raw "/history/period?minimal_response")
-        pc-parsed (when (= 200 (:status pc-resp))
-                    (try (json/parse-string (str (:body pc-resp)) true) (catch Exception _ nil)))
-        rec-entities (if (sequential? pc-parsed) (count pc-parsed) 0)
-        rec-points (if (sequential? pc-parsed)
-                     (reduce + 0 (map #(if (sequential? %) (count %) 0) pc-parsed)) 0)
-        hist (states->hourly (if (> (:raw pa) 0) (:states pa) (:states pb)))
+  (let [now (-> (java.time.Instant/now) (.truncatedTo java.time.temporal.ChronoUnit/SECONDS))
+        start (.toString (.minusSeconds now (* history-days 86400)))
+        end (.toString now)
+        p (hist-probe (str "/history/period/" start "?end_time=" end
+                           "&filter_entity_id=" sensor "&minimal_response"))
+        hist (states->hourly (:states p))
         ;; /states: aktueller Wert + komplette Sensor-Liste
         rs (ha-get-raw "/states")
         all (when (= 200 (:status rs)) (try (json/parse-string (str (:body rs)) true) (catch Exception _ nil)))
@@ -157,15 +150,11 @@
                             (when-let [h (iso->hour (or (:last_changed cur) (:last_updated cur)))] {h v})))
         merged (merge (or hist {}) cur-map)]
     (reset! entities (or sensors []))
-    (reset! ha-debug {:histA-status (:status pa) :histA-raw (:raw pa)
-                      :histB-status (:status pb) :histB-raw (:raw pb)
-                      :recorder-entities rec-entities :recorder-points rec-points
+    (reset! ha-debug {:hist-status (:status p) :hist-raw (:raw p) :days history-days
                       :states-status (:status rs) :sensor-count (count sensors)
-                      :hours (count merged) :sensor sensor
-                      :body (subs (:body pa) 0 (min 140 (count (:body pa))))})
-    (println (str "[aqua] histA=" (:raw pa) " histB=" (:raw pb)
-                  " recorder=" rec-entities "E/" rec-points "P"
-                  " states=" (:status rs) " sensors=" (count sensors) " -> Std=" (count merged)))
+                      :hours (count merged) :sensor sensor})
+    (println (str "[aqua] history raw=" (:raw p) " states=" (:status rs)
+                  " sensors=" (count sensors) " -> Innen-Stunden=" (count merged)))
     merged))
 
 (defn parse-hourly [h]
