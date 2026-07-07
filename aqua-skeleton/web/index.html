@@ -20,6 +20,7 @@
 <body>
   <h1>🌡️ Edlau — Thermisches Archiv &amp; Modell</h1>
   <div id="status" class="muted">lade …</div>
+  <div id="hadbg" class="muted" style="font-size:.8rem"></div>
   <div id="cards" class="cards"></div>
   <div id="chart"></div>
   <p class="muted">Innen = Messung (HA-Recorder) · Außen/Sonne/Wind = Open-Meteo · „Innen (Modell)" = free-run des geschätzten RC-Modells. Serien in der Legende an/aus klickbar.</p>
@@ -76,10 +77,18 @@
     }
 
     fetch("api/data").then(r => r.json()).then(d => {
+      const h = d.ha_debug || {};
+      document.getElementById("hadbg").textContent =
+        "HA-History: Status " + (h.status ?? "–") + " · Rohpunkte " + (h.raw ?? "–")
+        + " · → " + (h.hours ?? 0) + " Std · Sensor " + (h.sensor || "?");
       cards(d.model, d.indoor_hours, d.updated);
-      if (!d.time || d.time.length === 0) {
+      if (d.status !== "ok") {
         document.getElementById("status").textContent =
-          "Status: " + (d.status||"?") + " — noch keine Daten (erster Abruf läuft, ~1 Min).";
+          "Status: " + (d.status || "?") + " — erster Abruf läuft, Seite in ~20 s neu laden.";
+        return;
+      }
+      if (!d.time || d.time.length === 0) {
+        document.getElementById("status").textContent = "Status: ok — aber keine Daten im Archiv.";
         return;
       }
       draw(d);

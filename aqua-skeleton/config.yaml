@@ -1,7 +1,7 @@
 # HA-Add-on-Manifest. Weil kein "image:" angegeben ist, BAUT der Supervisor
 # das Add-on lokal aus dem Dockerfile fuer die Architektur der Box.
 name: "Aqua Skeleton"
-version: "0.3.0"
+version: "0.3.1"
 slug: "aqua_skeleton"
 description: "Thermisches Archiv + Modell-Schaetzung (HA-History + Open-Meteo, RC-Fit)"
 arch:
@@ -20,7 +20,9 @@ options:
   sensor: "sensor.wohnzimmer_shelly_2_temperatur"
   latitude: 51.68
   longitude: 11.77
+  days: 14
 schema:
   sensor: str
   latitude: float
   longitude: float
+  days: int

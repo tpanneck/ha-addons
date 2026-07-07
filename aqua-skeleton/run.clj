@@ -25,6 +25,7 @@
 (def lat    (or (:latitude opts) 51.68))
 (def lon    (or (:longitude opts) 11.77))
 (def sensor (or (:sensor opts) "sensor.wohnzimmer_shelly_2_temperatur"))
+(def history-days (int (or (:days opts) 14)))  ;; nur so viel Historie lesen, wie sinnvoll da ist
 
 ;; ---------- lineare Algebra (verifiziert) ----------
 (defn solve-linear [A b]
@@ -94,22 +95,42 @@
           (when (= 200 (:status r)) (json/parse-string (:body r) true)))
         (catch Exception e (println "[aqua] Open-Meteo-Fehler" (.getMessage e)) nil)))))
 
+;; Diagnose des letzten HA-History-Aufrufs (Status + Rohpunkte), sichtbar auf der Seite.
+(def ha-debug (atom {}))
+
+(defn ha-get-raw [path]
+  (with-timeout 20000
+    (fn []
+      (try
+        (hc/get (str api-base path)
+                {:headers {"Authorization" (str "Bearer " token)} :timeout 15000 :throw false})
+        (catch Exception e (println "[aqua] HA-Fehler" path (.getMessage e))
+               {:status -1 :error (.getMessage e)})))))
+
 ;; ---------- Datenquellen ----------
 (defn indoor-hourly
-  "Stuendlich gemittelte Innentemperatur aus HAs History (so weit vorhanden)."
+  "Stuendlich gemittelte Innentemperatur aus HAs History (letzte history-days Tage)."
   []
-  (let [start (-> (java.time.Instant/now) (.minusSeconds (* 92 86400)) .toString)
-        res (ha-get (str "/history/period/" start
-                         "?filter_entity_id=" sensor "&no_attributes"))
-        states (first res)]
-    (when (sequential? states)
-      (->> states
-           (keep (fn [s] (when-let [v (num? (:state s))]
-                           (when-let [h (iso->hour (:last_changed s))] [h v]))))
-           (group-by first)
-           (map (fn [[h pairs]]
-                  [h (/ (reduce + (map second pairs)) (count pairs))]))
-           (into {})))))
+  (let [start (-> (java.time.Instant/now)
+                  (.truncatedTo java.time.temporal.ChronoUnit/SECONDS)
+                  (.minusSeconds (* history-days 86400)) .toString)
+        path (str "/history/period/" start "?filter_entity_id=" sensor "&no_attributes")
+        resp (ha-get-raw path)
+        body (when (and resp (= 200 (:status resp)))
+               (try (json/parse-string (:body resp) true) (catch Exception _ nil)))
+        states (first body)
+        raw (if (sequential? states) (count states) 0)
+        hourly (when (sequential? states)
+                 (->> states
+                      (keep (fn [s] (when-let [v (num? (:state s))]
+                                      (when-let [h (iso->hour (or (:last_changed s) (:last_updated s)))] [h v]))))
+                      (group-by first)
+                      (map (fn [[h pairs]] [h (/ (reduce + (map second pairs)) (count pairs))]))
+                      (into {})))]
+    (reset! ha-debug {:status (:status resp) :raw raw :hours (count hourly) :sensor sensor})
+    (println (str "[aqua] HA-History status=" (:status resp) " Rohpunkte=" raw
+                  " -> Stunden=" (count hourly)))
+    (or hourly {})))
 
 (defn parse-hourly [h]
   (when h
@@ -120,21 +141,13 @@
          (into {}))))
 
 (defn outdoor-hourly
-  "Aussen/Strahlung/Wind stuendlich: Archiv-API (ERA5, lang, ~5 Tage Verzug)
-   + Forecast-API (letzte 7 Tage) fuer den frischen Rand. Null-Stunden fallen raus."
+  "Aussen/Strahlung/Wind stuendlich aus Open-Meteo (Forecast-API, letzte history-days Tage).
+   Null-Stunden fallen raus. Bewusst nur so weit zurueck, wie wir Innen-Daten haben."
   []
-  (let [today (java.time.LocalDate/now java.time.ZoneOffset/UTC)
-        a-start (.minusDays today 365)
-        a-end   (.minusDays today 5)
-        u-arch (str "https://archive-api.open-meteo.com/v1/archive?latitude=" lat "&longitude=" lon
-                    "&start_date=" a-start "&end_date=" a-end
-                    "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m&timezone=UTC")
-        u-rec  (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
-                    "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m"
-                    "&past_days=7&forecast_days=1&timezone=UTC")
-        a (parse-hourly (:hourly (om-get u-arch)))
-        r (parse-hourly (:hourly (om-get u-rec)))]
-    (merge (or a {}) (or r {}))))   ;; frischer Rand gewinnt bei Ueberlappung
+  (let [u (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
+               "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m"
+               "&past_days=" (min 92 history-days) "&forecast_days=1&timezone=UTC")]
+    (or (parse-hourly (:hourly (om-get u))) {})))
 
 ;; ---------- Archiv (CSV in /data) ----------
 (defn read-archive []
@@ -250,7 +263,8 @@
   (let [s (:series @state)
         m (:model @state)]
     (if (empty? s)
-      {:time [] :model m :status (:status @state) :indoor_hours (:indoor-hours @state)}
+      {:time [] :model m :status (:status @state) :indoor_hours (:indoor-hours @state)
+       :ha_debug @ha-debug}
       {:time  (mapv :e s)
        :t_in  (mapv #(:t_in %) s)
        :t_out (mapv #(:t_out %) s)
@@ -260,7 +274,8 @@
        :model m
        :indoor_hours (:indoor-hours @state)
        :updated (:updated @state)
-       :status (:status @state)})))
+       :status (:status @state)
+       :ha_debug @ha-debug})))
 
 (defn read-web [f ct]
   (try {:status 200 :headers {"Content-Type" ct} :body (slurp (str "web/" f))}
