@@ -40,6 +40,15 @@ Welcher Sensor angezeigt wird, steht im Tab **Konfiguration** (`sensor:`), Defau
 Ittigen-Temperatursensor. Passenden `entity_id` aus der Liste dort eintragen → Speichern →
 Neustart des Add-ons.
 
+## v0.3 — Thermisches Archiv + Modell-Schätzung
+Baut ein stündliches Archiv (`/data/archive.csv`): **Innen** aus HAs Recorder, **Außen/Sonne/Wind**
+aus Open-Meteo (Archiv-API ERA5, bis ~1 Jahr, + Forecast-API für die letzten 7 Tage). Schätzt
+per kleinster Quadrate das **RC-Modell** `C·dT/dt = −UA·(T_in−T_out) + A_eff·Sonne` **mit
+windabhängigem UA** und zeigt τ, UA₀, A_eff, k_wind, R²/RMSE plus einen **uPlot-Chart** (Innen
+gemessen vs. Modell-free-run, Außen, Sonne, Wind). Optionen: `sensor`, `latitude`, `longitude`.
+Nur Lesen/Rechnen — kein Schalten, keine Zukunftsprognose. Braucht Innen-Historie; je länger das
+Add-on läuft, desto besser die Schätzung.
+
 ## Später: Fleet-Verteilung
 Statt lokalem Ordner das Add-on in ein **Git-Repo** legen und in HA als
 **Add-on-Repository** eintragen — dann installieren/aktualisieren alle Boxen aus dem Store

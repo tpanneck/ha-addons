@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edlau — Thermisches Archiv &amp; Modell</title>
+  <link rel="stylesheet" href="uPlot.min.css">
+  <style>
+    body{font-family:system-ui,-apple-system,sans-serif;margin:1.2rem;color:#12253a}
+    h1{font-size:1.3rem;margin:.2rem 0}
+    .cards{display:flex;flex-wrap:wrap;gap:.6rem;margin:.8rem 0}
+    .card{background:#f4f7ff;border:1px solid #dde3f5;border-radius:8px;padding:.5rem .8rem;min-width:8rem}
+    .card b{display:block;font-size:1.25rem}
+    .card small{color:#667}
+    .muted{color:#667;font-size:.85rem}
+    #chart{margin-top:.6rem}
+    .err{color:#b02020;font-weight:600}
+  </style>
+</head>
+<body>
+  <h1>🌡️ Edlau — Thermisches Archiv &amp; Modell</h1>
+  <div id="status" class="muted">lade …</div>
+  <div id="cards" class="cards"></div>
+  <div id="chart"></div>
+  <p class="muted">Innen = Messung (HA-Recorder) · Außen/Sonne/Wind = Open-Meteo · „Innen (Modell)" = free-run des geschätzten RC-Modells. Serien in der Legende an/aus klickbar.</p>
+
+  <script src="uPlot.iife.min.js"></script>
+  <script>
+    const fmtNum = (v, d=1) => (v==null || isNaN(v)) ? "–" : Number(v).toFixed(d);
+
+    function cards(m, indoorHours, updated) {
+      const el = document.getElementById("cards");
+      if (!m) {
+        el.innerHTML = '<div class="card err">Noch zu wenig Innen-Daten für eine Schätzung.<br><small>'
+          + (indoorHours||0) + ' Stunden Innentemp im Archiv — braucht mehr Historie.</small></div>';
+        return;
+      }
+      const items = [
+        ["Zeitkonstante τ", fmtNum(m.tau_d,1) + " d", "= " + fmtNum(m.tau_h,0) + " h"],
+        ["UA₀", fmtNum(m.UA0,0) + " W/K", "bei C≈86 kWh/K"],
+        ["Wind-Anteil", fmtNum(m.kwind,1) + " W/K", "je km/h"],
+        ["Solarfläche A_eff", fmtNum(m.Aeff,1) + " m²", "effektiv"],
+        ["Fit R²", fmtNum(m.r2_step,3), "1-Schritt"],
+        ["RMSE", fmtNum(m.rmse_step,3) + " K/h", m.n + " Stundenpaare"],
+        ["Innen-Historie", (indoorHours||0) + " h", "≈ " + fmtNum((indoorHours||0)/24,1) + " Tage"],
+      ];
+      el.innerHTML = items.map(([t,v,s]) =>
+        `<div class="card"><small>${t}</small><b>${v}</b><small>${s}</small></div>`).join("");
+      document.getElementById("status").textContent =
+        "Stand: " + (updated||"–") + " · UA(wind) = UA₀ + Wind-Anteil·v";
+    }
+
+    function draw(d) {
+      const data = [d.time, d.t_in, d.t_model, d.t_out, d.solar, d.wind];
+      const w = Math.max(320, document.getElementById("chart").clientWidth || 900);
+      const opts = {
+        width: w, height: 420,
+        scales: { x:{time:true}, C:{}, sun:{}, wind:{} },
+        series: [
+          {},
+          {label:"Innen (gemessen)", scale:"C", stroke:"#c0392b", width:2, spanGaps:false},
+          {label:"Innen (Modell)",   scale:"C", stroke:"#c0392b", width:1, dash:[6,4], spanGaps:false},
+          {label:"Außen",            scale:"C", stroke:"#2980b9", width:1, spanGaps:false},
+          {label:"Sonne W/m²",       scale:"sun", stroke:"#e69510", width:1, spanGaps:false},
+          {label:"Wind km/h",        scale:"wind", stroke:"#7f8c8d", width:1, show:false, spanGaps:false},
+        ],
+        axes: [
+          {},
+          {scale:"C", label:"°C"},
+          {scale:"sun", side:1, label:"W/m²", grid:{show:false}},
+        ],
+      };
+      document.getElementById("chart").innerHTML = "";
+      const u = new uPlot(opts, data, document.getElementById("chart"));
+      window.addEventListener("resize", () => u.setSize({width: Math.max(320, document.getElementById("chart").clientWidth), height:420}));
+    }
+
+    fetch("api/data").then(r => r.json()).then(d => {
+      cards(d.model, d.indoor_hours, d.updated);
+      if (!d.time || d.time.length === 0) {
+        document.getElementById("status").textContent =
+          "Status: " + (d.status||"?") + " — noch keine Daten (erster Abruf läuft, ~1 Min).";
+        return;
+      }
+      draw(d);
+    }).catch(e => {
+      document.getElementById("status").innerHTML = '<span class="err">Fehler beim Laden: '+e+'</span>';
+    });
+  </script>
+</body>
+</html>

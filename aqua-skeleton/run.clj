@@ -1,115 +1,289 @@
 (ns run
-  "HA-Add-on-Skelett (Babashka) - Schritt 2: HA-API-Anbindung.
-   - liest ueber die Supervisor-API einen konfigurierbaren Sensor
-   - zeigt ihn live (Seite refresht alle 30 s)
-   - listet zur Entdeckung alle Temperatur-Sensoren der Box
-   Token kommt automatisch via SUPERVISOR_TOKEN (config.yaml: homeassistant_api: true)."
+  "HA-Add-on (Babashka) v0.3 - Thermisches Archiv + Modell-Schaetzung (Edlau).
+   - Innentemperatur aus HAs Recorder (History-API)
+   - Aussen/Strahlung/Wind aus Open-Meteo (Archiv, ~92 Tage rueckwirkend)
+   - stuendliches Archiv als CSV in /data
+   - RC-Modell per kleinster Quadrate schaetzen (mit Wind-Term)
+   - Visualisierung (uPlot, offline gebuendelt)
+   Nur LESEN + RECHNEN. Kein Schalten, keine Prognose in die Zukunft."
   (:require [org.httpkit.server :as http]
             [babashka.http-client :as hc]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+;; ---------- Konfiguration ----------
 (def start-ms (System/currentTimeMillis))
 (def port (Integer/parseInt (or (System/getenv "INGRESS_PORT") "8099")))
 (def token (System/getenv "SUPERVISOR_TOKEN"))
 (def api-base "http://supervisor/core/api")
+(def archive-file (or (System/getenv "ARCHIVE_FILE") "/data/archive.csv"))
+(def C-assumed-wh 86000.0) ;; angenommene Waermekapazitaet ~86 kWh/K (aus Heizplan) - zum Umrechnen
 
 (defn options []
-  (try (json/parse-string (slurp "/data/options.json") true)
-       (catch Exception _ {})))
+  (try (json/parse-string (slurp "/data/options.json") true) (catch Exception _ {})))
+(def opts (options))
+(def lat    (or (:latitude opts) 51.68))
+(def lon    (or (:longitude opts) 11.77))
+(def sensor (or (:sensor opts) "sensor.wohnzimmer_shelly_2_temperatur"))
 
-(def configured-sensor
-  (or (:sensor (options)) "sensor.shellyhtg3_80b54e335734_temperatur"))
+;; ---------- lineare Algebra (verifiziert) ----------
+(defn solve-linear [A b]
+  (let [n (count A)
+        M0 (mapv (fn [row bi] (conj (vec (map double row)) (double bi))) A b)
+        M (loop [M M0 i 0]
+            (if (= i n) M
+                (let [piv (apply max-key (fn [r] (Math/abs (double (get-in M [r i])))) (range i n))
+                      M (if (= piv i) M (-> M (assoc i (M piv)) (assoc piv (M i))))
+                      prow (M i) pval (double (prow i))
+                      M (reduce (fn [M k]
+                                  (let [krow (M k) f (/ (double (krow i)) pval)]
+                                    (assoc M k (mapv #(- (double %1) (* f (double %2))) krow prow))))
+                                M (range (inc i) n))]
+                  (recur M (inc i)))))]
+    (reduce (fn [x row]
+              (let [r (M row)
+                    s (reduce + 0.0 (map (fn [j] (* (double (r j)) (x j))) (range (inc row) n)))]
+                (assoc x row (/ (- (double (r n)) s) (double (r row))))))
+            (vec (repeat n 0.0))
+            (range (dec n) -1 -1))))
+
+(defn ols [xs ys]
+  (let [p (count (first xs))
+        XtX (vec (for [i (range p)]
+                   (vec (for [j (range p)]
+                          (reduce + 0.0 (map (fn [x] (* (double (nth x i)) (double (nth x j)))) xs))))))
+        Xty (vec (for [i (range p)]
+                   (reduce + 0.0 (map (fn [x y] (* (double (nth x i)) (double y))) xs ys))))]
+    (solve-linear XtX Xty)))
+
+;; ---------- Zeit-Helfer (UTC-Stunde) ----------
+(def hour-fmt (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:00"))
+(defn iso->hour [iso]
+  (try (-> (java.time.OffsetDateTime/parse iso) .toInstant
+           (.atZone java.time.ZoneOffset/UTC)
+           (.truncatedTo java.time.temporal.ChronoUnit/HOURS)
+           (.format hour-fmt))
+       (catch Exception _ nil)))
+(defn hour->epoch [ts]
+  (try (.toEpochSecond (java.time.LocalDateTime/parse ts) java.time.ZoneOffset/UTC)
+       (catch Exception _ nil)))
+(defn num? [s] (try (Double/parseDouble (str s)) (catch Exception _ nil)))
+
+;; ---------- HTTP (harte Timeouts, damit die Loop nie haengt) ----------
+(defn with-timeout [ms f]
+  (let [fut (future (f))
+        v (deref fut ms ::timeout)]
+    (when (= v ::timeout) (future-cancel fut))
+    (when-not (= v ::timeout) v)))
 
 (defn ha-get [path]
+  (with-timeout 18000
+    (fn []
+      (try
+        (let [r (hc/get (str api-base path)
+                        {:headers {"Authorization" (str "Bearer " token)}
+                         :timeout 12000 :throw false})]
+          (when (= 200 (:status r)) (json/parse-string (:body r) true)))
+        (catch Exception e (println "[aqua] HA-Fehler" path (.getMessage e)) nil)))))
+
+(defn om-get [url]
+  (with-timeout 25000
+    (fn []
+      (try
+        (let [r (hc/get url {:timeout 18000 :throw false})]
+          (when (= 200 (:status r)) (json/parse-string (:body r) true)))
+        (catch Exception e (println "[aqua] Open-Meteo-Fehler" (.getMessage e)) nil)))))
+
+;; ---------- Datenquellen ----------
+(defn indoor-hourly
+  "Stuendlich gemittelte Innentemperatur aus HAs History (so weit vorhanden)."
+  []
+  (let [start (-> (java.time.Instant/now) (.minusSeconds (* 92 86400)) .toString)
+        res (ha-get (str "/history/period/" start
+                         "?filter_entity_id=" sensor "&no_attributes"))
+        states (first res)]
+    (when (sequential? states)
+      (->> states
+           (keep (fn [s] (when-let [v (num? (:state s))]
+                           (when-let [h (iso->hour (:last_changed s))] [h v]))))
+           (group-by first)
+           (map (fn [[h pairs]]
+                  [h (/ (reduce + (map second pairs)) (count pairs))]))
+           (into {})))))
+
+(defn parse-hourly [h]
+  (when h
+    (->> (map (fn [ti te ra wi]
+                (when (some? te) [ti {:t_out te :solar ra :wind wi}]))
+              (:time h) (:temperature_2m h) (:shortwave_radiation h) (:wind_speed_10m h))
+         (remove nil?)
+         (into {}))))
+
+(defn outdoor-hourly
+  "Aussen/Strahlung/Wind stuendlich: Archiv-API (ERA5, lang, ~5 Tage Verzug)
+   + Forecast-API (letzte 7 Tage) fuer den frischen Rand. Null-Stunden fallen raus."
+  []
+  (let [today (java.time.LocalDate/now java.time.ZoneOffset/UTC)
+        a-start (.minusDays today 365)
+        a-end   (.minusDays today 5)
+        u-arch (str "https://archive-api.open-meteo.com/v1/archive?latitude=" lat "&longitude=" lon
+                    "&start_date=" a-start "&end_date=" a-end
+                    "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m&timezone=UTC")
+        u-rec  (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
+                    "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m"
+                    "&past_days=7&forecast_days=1&timezone=UTC")
+        a (parse-hourly (:hourly (om-get u-arch)))
+        r (parse-hourly (:hourly (om-get u-rec)))]
+    (merge (or a {}) (or r {}))))   ;; frischer Rand gewinnt bei Ueberlappung
+
+;; ---------- Archiv (CSV in /data) ----------
+(defn read-archive []
   (try
-    (let [resp (hc/get (str api-base path)
-                       {:headers {"Authorization" (str "Bearer " token)}
-                        :throw false})]
-      (when (= 200 (:status resp))
-        (json/parse-string (:body resp) true)))
-    (catch Exception e
-      (println (str "[aqua-skeleton] HA-API-Fehler " path ": " (.getMessage e)))
-      nil)))
+    (when (.exists (java.io.File. archive-file))
+      (let [lines (str/split-lines (slurp archive-file))]
+        (into {} (for [ln (rest lines) :when (not (str/blank? ln))]
+                   (let [[ts ti to so wi] (str/split ln #"," -1)]
+                     [ts {:t_in (num? ti) :t_out (num? to) :solar (num? so) :wind (num? wi)}])))))
+    (catch Exception _ {})))
 
-(defn fmt-state [s]
-  (when s
-    {:entity  (:entity_id s)
-     :name    (get-in s [:attributes :friendly_name] (:entity_id s))
-     :value   (:state s)
-     :unit    (or (get-in s [:attributes :unit_of_measurement]) "")
-     :changed (:last_changed s)}))
+(defn write-archive [m]
+  (try
+    (let [p (.getParentFile (java.io.File. archive-file))]
+      (when (and p (not (.exists p))) (.mkdirs p)))
+    (let [rows (sort-by first m)
+          body (str "ts,t_in,t_out,solar,wind\n"
+                    (str/join "\n"
+                      (for [[ts v] rows]
+                        (str ts "," (or (:t_in v) "") "," (or (:t_out v) "")
+                             "," (or (:solar v) "") "," (or (:wind v) "")))))]
+      (spit archive-file body))
+    (catch Exception e (println "[aqua] Archiv-Schreibfehler" (.getMessage e)))))
 
-(defn temp-sensors []
-  (let [all (ha-get "/states")]
-    (when (sequential? all)
-      (->> all
-           (filter #(str/starts-with? (str (:entity_id %)) "sensor."))
-           (filter #(str/includes? (str/lower-case (str (:entity_id %))) "temperatur"))
-           (map fmt-state)
-           (sort-by :entity)))))
+(defn build-archive []
+  (let [in (or (indoor-hourly) {})
+        out (or (outdoor-hourly) {})
+        old (read-archive)
+        keys (into #{} (concat (keys old) (keys in) (keys out)))
+        merged (into {} (for [ts keys]
+                          [ts (merge (get old ts)
+                                     (when-let [o (get out ts)] o)
+                                     (when-let [i (get in ts)] {:t_in i}))]))]
+    (write-archive merged)
+    merged))
 
-(defn uptime-str []
-  (let [s (quot (- (System/currentTimeMillis) start-ms) 1000)]
-    (format "%dh %02dm %02ds" (quot s 3600) (mod (quot s 60) 60) (mod s 60))))
+;; ---------- Modell-Schaetzung ----------
+(defn fit-model [archive]
+  (let [rows (->> archive (sort-by first)
+                  (map (fn [[ts v]] (assoc v :ts ts :e (hour->epoch ts)))))
+        by-epoch (into {} (map (juxt :e identity) rows))
+        ;; Paare (k, k+1h) mit vollstaendigen Daten:
+        pairs (for [r rows
+                    :let [nxt (get by-epoch (+ (:e r) 3600))]
+                    :when (and nxt (:t_in r) (:t_in nxt) (:t_out r) (:solar r) (:wind r))]
+                (let [dT   (- (:t_out r) (:t_in r))
+                      x    [1.0 dT (:solar r) (* (:wind r) dT)]
+                      y    (- (:t_in nxt) (:t_in r))]
+                  {:x x :y y}))]
+    (when (>= (count pairs) 12)
+      (let [beta (ols (map :x pairs) (map :y pairs))
+            [g a b c] beta
+            preds (map (fn [{:keys [x]}] (reduce + (map * x beta))) pairs)
+            ys (map :y pairs)
+            ybar (/ (reduce + ys) (count ys))
+            ss-res (reduce + (map (fn [y p] (Math/pow (- y p) 2)) ys preds))
+            ss-tot (reduce + (map (fn [y] (Math/pow (- y ybar) 2)) ys))
+            rmse (Math/sqrt (/ ss-res (count ys)))
+            r2 (if (pos? ss-tot) (- 1.0 (/ ss-res ss-tot)) 0.0)]
+        {:g g :a a :b b :c c
+         :tau-h (when (pos? a) (/ 1.0 a))
+         :tau-d (when (pos? a) (/ 1.0 a 24.0))
+         :UA0   (* a C-assumed-wh)          ;; W/K  (bei C angenommen)
+         :kwind (* c C-assumed-wh)          ;; W/K je km/h
+         :Aeff  (* b C-assumed-wh)          ;; m^2 effektiv
+         :rmse-step rmse :r2-step r2 :n (count pairs)}))))
 
-(defn esc [x] (-> (str x) (str/replace "&" "&amp;") (str/replace "<" "&lt;")))
+(defn archive->rows [archive]
+  (->> archive (sort-by first)
+       (mapv (fn [[ts v]] (assoc v :ts ts :e (hour->epoch ts))))))
 
-(defn page []
-  (let [tok? (and token (not (str/blank? token)))
-        main (when tok? (fmt-state (ha-get (str "/states/" configured-sensor))))
-        temps (when tok? (temp-sensors))]
-    (str
-     "<!doctype html><html lang=\"de\"><head><meta charset=\"utf-8\">"
-     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-     "<meta http-equiv=\"refresh\" content=\"30\">"
-     "<title>Aqua Skeleton</title>"
-     "<style>body{font-family:system-ui,-apple-system,sans-serif;margin:2rem;color:#12253a}"
-     "h1{font-size:1.4rem}h2{font-size:1.05rem;margin-top:1.6rem}"
-     ".ok{color:#0a7d28;font-weight:600}.err{color:#b02020;font-weight:600}"
-     ".big{font-size:2.6rem;font-weight:700;margin:.3rem 0}"
-     "code{background:#eef2ff;padding:.1rem .35rem;border-radius:5px;font-size:.85em}"
-     "table{border-collapse:collapse;margin-top:.4rem}td,th{border:1px solid #dde;padding:.25rem .6rem;text-align:left;font-size:.9rem}"
-     "small{color:#667}</style></head><body>"
-     "<h1>&#127754; Aqua Skeleton &mdash; HA-API</h1>"
-     (cond
-       (not tok?)
-       "<p class=\"err\">Kein SUPERVISOR_TOKEN &mdash; ist <code>homeassistant_api: true</code> gesetzt?</p>"
-       (nil? main)
-       (str "<p class=\"err\">Sensor <code>" (esc configured-sensor)
-            "</code> nicht gefunden oder API nicht erreichbar.</p>"
-            "<p><small>Passenden Namen aus der Liste unten in die Add-on-Konfiguration eintragen.</small></p>")
-       :else
-       (str "<p>Gewaehlter Sensor <code>" (esc (:entity main)) "</code>:</p>"
-            "<div class=\"big\">" (esc (:value main)) " " (esc (:unit main)) "</div>"
-            "<p>" (esc (:name main)) "<br><small>Stand: " (esc (:changed main)) "</small></p>"))
-     (when (seq temps)
-       (str "<h2>Temperatur-Sensoren auf der Box (" (count temps) ")</h2>"
-            "<table><tr><th>Wert</th><th>Name</th><th>entity_id</th></tr>"
-            (str/join
-             (for [t temps]
-               (str "<tr><td>" (esc (:value t)) " " (esc (:unit t)) "</td>"
-                    "<td>" (esc (:name t)) "</td>"
-                    "<td><code>" (esc (:entity t)) "</code></td></tr>")))
-            "</table>"
-            "<p><small>Tipp: den passenden <code>entity_id</code> in der Add-on-Konfiguration als <code>sensor</code> setzen.</small></p>"))
-     "<hr><p><small>Uptime " (uptime-str) " &middot; Seite aktualisiert sich alle 30 s.</small></p>"
-     "</body></html>")))
+(defn attach-model
+  "Haengt die Modell-Kurve (:tm) an die Archiv-Zeilen. Free-run mit Anker am Messwert;
+   bei fehlendem Modell ist :tm ueberall nil (Chart zeigt dann nur die Messdaten)."
+  [rows model]
+  (if-not model
+    (mapv #(assoc % :tm nil) rows)
+    (let [{:keys [g a b c]} model]
+      (loop [rs rows prev nil acc []]
+        (if (empty? rs)
+          (vec (reverse acc))
+          (let [r (first rs)
+                cont? (and prev (= (:e r) (+ (:e prev) 3600))
+                           (:t_out prev) (:solar prev) (:wind prev) (some? (:tm prev)))
+                step (fn [] (let [dT (- (:t_out prev) (:tm prev))]
+                              (+ (:tm prev) g (* a dT) (* b (:solar prev)) (* c (:wind prev) dT))))
+                tm (cond
+                     (and (nil? (:t_in r)) cont?) (step)   ;; free-run durch Innen-Luecken
+                     (nil? (:t_in r))             nil
+                     (not cont?)                  (:t_in r) ;; Anker am Messwert
+                     :else                        (step))
+                r' (assoc r :tm tm)]
+            (recur (rest rs) r' (conj acc r'))))))))
 
-(defn handler [_req]
-  {:status 200
-   :headers {"Content-Type" "text/html; charset=utf-8"}
-   :body (page)})
+;; ---------- State / Loop ----------
+(def state (atom {:status "startet..." :archive {} :model nil :series nil}))
+
+(defn refresh! []
+  (println "[aqua] Archiv-Update laeuft...")
+  (let [arch (build-archive)
+        model (fit-model arch)
+        series (attach-model (archive->rows arch) model)
+        n-in (count (filter (comp :t_in val) arch))]
+    (reset! state {:status "ok" :archive arch :model model :series series
+                   :indoor-hours n-in :updated (str (java.time.OffsetDateTime/now))})
+    (println (str "[aqua] fertig: " (count arch) " Stunden im Archiv, "
+                  n-in " mit Innentemp"
+                  (when model (str "; tau=" (format "%.1f" (double (:tau-d model))) " d, R2="
+                                   (format "%.3f" (double (:r2-step model)))))))))
+
+;; ---------- Web ----------
+(defn series->json []
+  (let [s (:series @state)
+        m (:model @state)]
+    (if (empty? s)
+      {:time [] :model m :status (:status @state) :indoor_hours (:indoor-hours @state)}
+      {:time  (mapv :e s)
+       :t_in  (mapv #(:t_in %) s)
+       :t_out (mapv #(:t_out %) s)
+       :solar (mapv #(:solar %) s)
+       :wind  (mapv #(:wind %) s)
+       :t_model (mapv #(:tm %) s)
+       :model m
+       :indoor_hours (:indoor-hours @state)
+       :updated (:updated @state)
+       :status (:status @state)})))
+
+(defn read-web [f ct]
+  (try {:status 200 :headers {"Content-Type" ct} :body (slurp (str "web/" f))}
+       (catch Exception _ {:status 404 :body "not found"})))
+
+(def index-html (slurp "web/index.html"))
+
+(defn handler [req]
+  (case (:uri req)
+    "/api/data"           {:status 200 :headers {"Content-Type" "application/json"}
+                           :body (json/generate-string (series->json))}
+    "/uPlot.iife.min.js"  (read-web "uPlot.iife.min.js" "application/javascript")
+    "/uPlot.min.css"      (read-web "uPlot.min.css" "text/css")
+    {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
-  (println (str "[aqua-skeleton] HTTP-Server auf 0.0.0.0:" port " gestartet"
-                " - Sensor: " configured-sensor
-                " - Token: " (if (and token (not (str/blank? token))) "vorhanden" "FEHLT")))
+  (println (str "[aqua] v0.3 auf 0.0.0.0:" port " - Sensor " sensor
+                " @ " lat "," lon " - Token " (if (str/blank? (str token)) "FEHLT" "ok")))
   (future
     (loop []
-      (Thread/sleep 30000)
-      (println (str "[aqua-skeleton] heartbeat - uptime " (uptime-str)))
+      (try (refresh!) (catch Exception e (println "[aqua] refresh-Fehler" (.getMessage e))))
+      (Thread/sleep (* 60 60 1000)) ;; stuendlich
       (recur)))
   @(promise))
 

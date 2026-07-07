@@ -1,9 +1,9 @@
 # HA-Add-on-Manifest. Weil kein "image:" angegeben ist, BAUT der Supervisor
 # das Add-on lokal aus dem Dockerfile fuer die Architektur der Box.
 name: "Aqua Skeleton"
-version: "0.2.0"
+version: "0.3.0"
 slug: "aqua_skeleton"
-description: "Test-Add-on (Babashka): liest ueber die HA-API einen Sensor + Ingress-Seite"
+description: "Thermisches Archiv + Modell-Schaetzung (HA-History + Open-Meteo, RC-Fit)"
 arch:
   - aarch64
   - amd64
@@ -12,11 +12,15 @@ init: false
 # Ingress = eigene Web-UI in der HA-Sidebar, ohne offenen Port:
 ingress: true
 ingress_port: 8099
-panel_icon: "mdi:water-pump"
+panel_icon: "mdi:home-thermometer"
 # Der Supervisor injiziert damit automatisch SUPERVISOR_TOKEN fuer die HA-API.
 homeassistant_api: true
-# Welcher Sensor auf der Seite angezeigt wird - in der Add-on-Konfiguration aenderbar.
+# In der Add-on-Konfiguration aenderbar:
 options:
-  sensor: "sensor.shellyhtg3_80b54e335734_temperatur"
+  sensor: "sensor.wohnzimmer_shelly_2_temperatur"
+  latitude: 51.68
+  longitude: 11.77
 schema:
   sensor: str
+  latitude: float
+  longitude: float
