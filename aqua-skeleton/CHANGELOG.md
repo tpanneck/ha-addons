@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1
+- Fix: Prognose-Darstellung endete "heute" (Chart-Recycling skalierte X-Achse nicht neu) ->
+  Chart 1 wird jetzt neu aufgebaut, X-Achse reicht in die Zukunft.
+- Prognose Aussen als eigene beschriftete Kurve; Prognose-Kachel zeigt End-Datum.
+
 ## 0.10.0
 - 5-Tage-Prognose der Innentemperatur: RC-Modell vorwaerts ueber den Open-Meteo-Forecast
   integriert, im Temperatur-Chart als gepunktete Linie in die Zukunft.

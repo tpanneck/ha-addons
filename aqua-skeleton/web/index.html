@@ -102,30 +102,34 @@
       document.getElementById("status").textContent="Stand: "+(d.updated||"–");
       const t=d.thermal||{}, c=d.corr||{}, nul=d.time.map(()=>null);
 
-      // 1 Temperatur (+ Prognose)
+      // 1 Temperatur (+ Prognose Innen & Außen)
       const fc=d.forecast||{time:[],t_in:[],t_out:[]};
       const nP=d.time.length, nF=fc.time.length;
       const padF=Array(nF).fill(null), padP=Array(nP).fill(null);
       const xall=d.time.concat(fc.time);
-      const tinA=d.t_in.concat(padF);
-      const toutA=d.t_out.concat(fc.t_out);
+      const tinP=d.t_in.concat(padF);
+      const toutP=d.t_out.concat(padF);
       const backA=(d.t_back||nul).concat(padF);
-      const fcast=padP.concat(fc.t_in);
-      if(nF&&nP) fcast[nP-1]=lastNN(d.t_in);
+      const fcIn=padP.concat(fc.t_in);   if(nF&&nP) fcIn[nP-1]=lastNN(d.t_in);
+      const fcOut=padP.concat(fc.t_out); if(nF&&nP) fcOut[nP-1]=lastNN(d.t_out);
       cards("c1cards",[
         ["Innen T", fmt(lastNN(d.t_in),1)+" °C",""],
         ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
         ["τ Abkling", fmt(t.tau_d,1)+" d", "R²="+fmt(t.r2,3)],
         ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"],
-        ["Prognose", nF?("+"+Math.round(nF/24)+" Tage"):"–", "aus Forecast"],
+        ["Prognose", nF?("+"+Math.round(nF/24)+" Tage"):"–",
+         nF?("bis "+new Date(fc.time[nF-1]*1000).toLocaleDateString()):"aus Forecast"],
       ]);
-      chart("c1","c1",{height:320,scales:{x:{time:true},C:{}},
-        series:[{},{label:"Innen (°C)",scale:"C",stroke:"#c0392b",width:2,spanGaps:true},
-                {label:"Außen (°C)",scale:"C",stroke:"#2980b9",width:1,spanGaps:true},
-                {label:"Modell rückw.",scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true},
-                {label:"Prognose Innen",scale:"C",stroke:"#e67e22",width:2,dash:[2,3],spanGaps:true}],
+      if(charts.c1){ charts.c1.destroy(); delete charts.c1; }  // Neuaufbau -> X-Achse inkl. Zukunft
+      chart("c1","c1",{height:340,scales:{x:{time:true},C:{}},
+        series:[{},
+          {label:"Innen (°C)",       scale:"C",stroke:"#c0392b",width:2,spanGaps:true},
+          {label:"Außen (°C)",       scale:"C",stroke:"#2980b9",width:1,spanGaps:true},
+          {label:"Modell rückw.",    scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true},
+          {label:"Prognose Innen",   scale:"C",stroke:"#e67e22",width:2,dash:[2,3],spanGaps:true},
+          {label:"Prognose Außen",   scale:"C",stroke:"#2980b9",width:1.5,dash:[2,3],spanGaps:true}],
         axes:[{},{scale:"C",label:"°C"}]},
-        [xall,tinA,toutA,backA,fcast]);
+        [xall,tinP,toutP,backA,fcIn,fcOut]);
 
       // 2 relative Feuchte
       cards("c2cards",[
