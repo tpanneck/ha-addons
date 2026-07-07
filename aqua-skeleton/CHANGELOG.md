@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2
+- FIX: Prognose kam rueckwaerts raus (falsches reverse) -> Zeitstempel liefen absteigend,
+  Kachel zeigte "bis heute", Chart clippte. Jetzt aufsteigend, reicht 5 Tage in die Zukunft.
+
 ## 0.10.1
 - Fix: Prognose-Darstellung endete "heute" (Chart-Recycling skalierte X-Achse nicht neu) ->
   Chart 1 wird jetzt neu aufgebaut, X-Achse reicht in die Zukunft.

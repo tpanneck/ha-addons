@@ -444,7 +444,7 @@
                 fut (take 120 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
             (when (seq fut)
               (loop [fs fut tprev t0 acc []]
-                (if (empty? fs) (reverse acc)
+                (if (empty? fs) acc   ;; acc ist bereits vorwaerts (aufsteigende Zeit) - NICHT reversen
                     (let [f (first fs)
                           tn (+ tprev (* a (- (:t_out f) tprev)) (* b (:solar f)) g)]
                       (recur (rest fs) tn (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})))))))))
