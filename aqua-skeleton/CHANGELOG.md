@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.8
+- Log druckt jetzt die ECHTE Build-Version ("[aqua] BUILD 0.11.8 ...") statt des alten Hardcodes
+  "v0.3" -> ob ein Update wirklich auf der Box gelandet ist, ist damit im Log beweisbar.
+  (Enthaelt alle Fixes: kein Anzeige-Trim, Innen-Overlay/Nowcast, Forward-Fill des sparsen Sensors.)
+
 ## 0.11.7
 - Innen-Sensor-Sparsity geloest: der Shelly sendet nur bei 0.1-Grad-Aenderung -> im traegen leeren
   Haus stundenlang kein neuer Punkt. Jetzt wird der letzte bekannte Wert stuendlich bis JETZT

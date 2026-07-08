@@ -551,9 +551,12 @@
     "/uPlot.min.css"      (read-web "uPlot.min.css" "text/css")
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
+;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
+(def build-version "0.11.8")
+
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
-  (println (str "[aqua] v0.3 auf 0.0.0.0:" port " - Sensor " sensor
+  (println (str "[aqua] BUILD " build-version " auf 0.0.0.0:" port " - Sensor " sensor
                 " @ " lat "," lon " - Token " (if (str/blank? (str token)) "FEHLT" "ok")))
   (future
     (loop []
