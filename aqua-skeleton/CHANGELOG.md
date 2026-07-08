@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.19
+- Kacheln Frostwaechter + Waermebedarf nach ganz oben (eigene Reihe unter dem Kopf).
+- Prognose-"+N Tage"-Kachel entfernt (ueberfluessig).
+
 ## 0.11.18
 - Prognose auf 14 Tage (forecast_days=14, take-Limit hoch).
 - Neue Kachel "Waermebedarf": Summe UA*(Sollwert - T_aussen) ueber die Prognose-Stunden, in denen

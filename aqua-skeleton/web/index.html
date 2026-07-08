@@ -33,6 +33,7 @@
     <button data-d="14">14 T</button><button data-d="0">Alle</button>
     <span id="winnote" class="muted"></span>
   </div>
+  <div id="topcards" class="cards" style="margin:.4rem 0 .8rem"></div>
   <div id="hadbg" class="muted" style="font-size:.78rem"></div>
 
   <div class="section">
@@ -150,17 +151,18 @@
       const nFut=futT.length;
       const ageH = li>=0? Math.round((lastArch-d.time[li])/3600) : null;   // Alter letzter Innen-Messwert
       const fixed = t.mode==="fixed";
+      // Die zwei praktischen Kennzahlen ganz oben:
+      cards("topcards",[
+        ["Frostwächter", t.kw_design!=null?fmt(t.kw_design,1)+" kW":"–",
+         "+"+fmt(t.frost_set,0)+" °C bei "+fmt(t.design_out,0)+" °C außen"],
+        ["Wärmebedarf", d.heat_kwh!=null?fmt(d.heat_kwh,0)+" kWh":"–",
+         "Prognose "+(d.heat_days?Math.round(d.heat_days):"?")+" T, für +"+fmt(t.frost_set,0)+" °C"],
+      ]);
       cards("c1cards",[
         ["Innen T", fmt(lastNN(d.t_in),1)+" °C", (ageH!=null&&ageH>=2)?("Messung vor "+ageH+" h"):""],
         ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
         ["τ Abkling", fmt(t.tau_d,1)+" d", fixed?"fest vorgegeben (Heizbetrieb)":("R²="+fmt(t.r2,3))],
         ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"+(fixed?" · τ fest":"")],
-        ["Frostwächter", t.kw_design!=null?fmt(t.kw_design,1)+" kW":"–",
-         "+"+fmt(t.frost_set,0)+" °C bei "+fmt(t.design_out,0)+" °C außen"],
-        ["Wärmebedarf", d.heat_kwh!=null?fmt(d.heat_kwh,0)+" kWh":"–",
-         "Prognose "+(d.heat_days?Math.round(d.heat_days):"?")+" T, für +"+fmt(t.frost_set,0)+" °C"],
-        ["Prognose", nFut?("+"+Math.round(nFut/24)+" Tage"):"–",
-         nFut?("bis "+new Date(futT[nFut-1]*1000).toLocaleDateString()):"aus Forecast"],
       ]);
       if(charts.c1){ charts.c1.destroy(); delete charts.c1; }  // Neuaufbau -> X-Achse inkl. Zukunft
       chart("c1","c1",{height:340,scales:{x:{time:true},C:{}},
