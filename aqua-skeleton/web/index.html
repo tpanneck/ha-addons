@@ -13,6 +13,9 @@
     .cards{display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0}
     .card{background:#f4f7ff;border:1px solid #dde3f5;border-radius:8px;padding:.4rem .7rem;min-width:7rem}
     .card b{display:block;font-size:1.15rem}.card small{color:#667}
+    .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:.5rem 0}
+    .dgrid .chart{height:190px}
+    @media(max-width:620px){.dgrid{grid-template-columns:1fr}}
     .muted{color:#667;font-size:.85rem}
     .expl{color:#334;font-size:.9rem;margin:.2rem 0 .5rem}
     button{margin:0 .1rem;cursor:pointer}
@@ -61,10 +64,16 @@
        willkürlichen Detrend). <b>Dämpfung</b> = außen/innen, <b>Lag</b> = Phasenverzug. Antwortet: steckt der
        Tagesgang innen drin, obwohl man ihn nicht sieht? Und was treibt die Innen-RH — T_innen oder die Außenluft?</p>
     <div id="c4cards" class="cards"></div>
-    <p class="expl" style="margin-top:.6rem"><b>Tagesprofil</b> (Mittel je Stunde über das Fenster, jede Reihe auf
-       0–100 % ihrer <i>eigenen</i> Spanne skaliert): zeigt <b>wann</b> jede Größe ihr Max/Min hat und wie stark
-       sie gegeneinander verschoben sind. Die reale Spanne (low↔high) und die Max-Uhrzeit stehen in den Kacheln.</p>
-    <div id="c5cards" class="cards"></div><div id="c5" class="chart"></div>
+    <p class="expl" style="margin-top:.6rem"><b>Tagesgänge übereinander</b> (Klima-Stil): jeder Tag als eigene
+       24-h-Kurve, um seinen <i>Tagesmittel</i> auf 0 zentriert — nur echte Messwerte, nichts modelliert.
+       Die Streuung der dünnen Linien = tägliche Variabilität, die dicke Linie = Mittel aller Tage,
+       ihr Hoch/Tief = typische Peak-Zeit. x-Achse lokal.</p>
+    <div class="dgrid">
+      <div><div class="muted" style="margin:.2rem 0">T innen — Abw. vom Tagesmittel (°C)</div><div id="dTin" class="chart"></div></div>
+      <div><div class="muted" style="margin:.2rem 0">T außen (°C)</div><div id="dTout" class="chart"></div></div>
+      <div><div class="muted" style="margin:.2rem 0">RH innen (%)</div><div id="dRHin" class="chart"></div></div>
+      <div><div class="muted" style="margin:.2rem 0">RH außen (%)</div><div id="dRHout" class="chart"></div></div>
+    </div>
     <div id="c4tab" style="margin:.4rem 0"></div>
     <p id="c4note" class="expl"></p>
   </div>
@@ -192,38 +201,27 @@
         ["RH innen ~ T innen", fmt(c.t_rh,2), "Thermometer"],
         ["RH innen ~ RH außen", fmt(c.rh_in_out,2), "Außen-Kopplung"],
       ]);
-      // 4b Tagesprofil: normierte 24-h-Kurven (lokal) + Kacheln mit realer Spanne & Max-Zeit
-      const dd=d.diurnal||{};
+      // 4b Tagesgänge übereinander (Klima-Stil): echte, je Tag um den Tagesmittel zentrierte Kurven
+      const dc=d.daily_curves||{};
       const offH=-new Date().getTimezoneOffset()/60;               // Stunden vor UTC (CEST=+2)
-      const shift=arr=>{ if(!arr) return null; const o=((offH%24)+24)%24;
+      const shiftL=arr=>{ if(!arr) return null; const o=((offH%24)+24)%24;
         return Array.from({length:24},(_,L)=>arr[((L-o)%24+24)%24]); };
-      const norm=arr=>{ if(!arr) return null; const v=arr.filter(x=>x!=null);
-        if(v.length<2) return arr.map(()=>null); const lo=Math.min(...v),hi=Math.max(...v),dl=(hi-lo)||1;
-        return arr.map(x=>x==null?null:(x-lo)/dl); };
-      const stat=arr=>{ if(!arr) return null; const p=arr.map((x,i)=>[x,i]).filter(a=>a[0]!=null);
-        if(p.length<2) return null; let mx=p[0],mn=p[0]; for(const a of p){ if(a[0]>mx[0])mx=a; if(a[0]<mn[0])mn=a; }
-        return {lo:mn[0],hi:mx[0],peak:mx[1],span:mx[0]-mn[0]}; };
-      const se={t_in:shift(dd.t_in),t_out:shift(dd.t_out),rh_in:shift(dd.rh_in),rh_out:shift(dd.rh_out)};
-      const pk=s=>s?String(s.peak).padStart(2,"0")+":00":"–";
-      const sp=(s,u)=>s?fmt(s.lo,1)+"–"+fmt(s.hi,1)+" "+u:"–";
-      const st4={t_in:stat(se.t_in),t_out:stat(se.t_out),rh_in:stat(se.rh_in),rh_out:stat(se.rh_out)};
-      cards("c5cards",[
-        ["T innen", sp(st4.t_in,"°C"), "Max "+pk(st4.t_in)],
-        ["T außen", sp(st4.t_out,"°C"), "Max "+pk(st4.t_out)],
-        ["RH innen", sp(st4.rh_in,"%"), "Max "+pk(st4.rh_in)],
-        ["RH außen", sp(st4.rh_out,"%"), "Max "+pk(st4.rh_out)],
-      ]);
       const hrs=Array.from({length:24},(_,i)=>i);
-      if(charts.c5){ charts.c5.destroy(); delete charts.c5; }
-      chart("c5","c5",{height:250,scales:{x:{time:false},N:{range:[-0.05,1.05]}},
-        series:[{label:"Std (lokal)"},
-          {label:"T innen",  scale:"N",stroke:"#c0392b",width:2.5,spanGaps:true},
-          {label:"T außen",  scale:"N",stroke:"#2980b9",width:2.5,spanGaps:true},
-          {label:"RH innen", scale:"N",stroke:"#16a085",width:2.5,dash:[5,3],spanGaps:true},
-          {label:"RH außen", scale:"N",stroke:"#27ae60",width:2,dash:[5,3],spanGaps:true}],
-        axes:[{scale:"x",values:(u,v)=>v.map(x=>x+"h")},
-              {scale:"N",label:"% der Eigen-Spanne",values:(u,v)=>v.map(x=>Math.round(x*100))}]},
-        [hrs,norm(se.t_in),norm(se.t_out),norm(se.rh_in),norm(se.rh_out)]);
+      const dailyChart=(elId,curves,color)=>{
+        const cs=(curves||[]).map(shiftL);
+        const mean=hrs.map(h=>{ const v=cs.map(c=>c[h]).filter(x=>x!=null);
+          return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; });
+        const series=[{},...cs.map(()=>({scale:"y",stroke:"rgba(120,130,150,.30)",width:1,spanGaps:true})),
+                      {scale:"y",stroke:color,width:3,spanGaps:true}];
+        if(charts[elId]){ charts[elId].destroy(); delete charts[elId]; }
+        chart(elId,elId,{height:190,legend:{show:false},scales:{x:{time:false},y:{}},
+          series,axes:[{scale:"x",values:(u,v)=>v.map(x=>x+"h")},{scale:"y"}]},
+          [hrs,...cs,mean]);
+      };
+      dailyChart("dTin",  dc.t_in,  "#c0392b");
+      dailyChart("dTout", dc.t_out, "#2980b9");
+      dailyChart("dRHin", dc.rh_in, "#16a085");
+      dailyChart("dRHout",dc.rh_out,"#27ae60");
       document.getElementById("c4tab").innerHTML =
         "<table><tr><th>Größe</th><th>Tages-Amplitude</th><th>Max (h UTC)</th></tr>"
         +`<tr><td>T innen</td><td>${A(dl.t_in,"K")}</td><td>${P(dl.t_in)}</td></tr>`

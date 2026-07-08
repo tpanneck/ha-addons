@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.13
+- Tagesprofil komplett neu (Klima-Stil), weil die harmonische Rekonstruktion Modell war, nicht Messung:
+  Jetzt pro Kanal ALLE einzelnen Tageskurven (24 h, echte Werte) einzeln, jede um ihren Tagesmittel
+  auf 0 zentriert, uebereinandergelegt + dick der Mittelwert aller Tage. Zeigt echte Streuung, typische
+  Form und Peak-Zeit - keine erfundenen/gefitteten Kurven. 4 Charts (T/RH innen/aussen), x-Achse lokal.
+
 ## 0.11.12
 - Tagesprofil-Chart: Kurven waren ruppig (v.a. T_innen, bei 14 Tagen schlimmer), weil das naive
   Stunden-Mittel die Mehrtages-Drift (~0.7 K/Woche) als Spruenge reinliess. Jetzt per harmonischer

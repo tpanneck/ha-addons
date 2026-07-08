@@ -555,28 +555,20 @@
                          (when (seq ps) (pearson (mapv first ps) (mapv second ps)))))
         corr {:t_rh (pr :t_in :rh_in) :t_q (pr :t_in q-of) :tout_tin (pr :t_out :t_in)
               :rh_in_out (pr :rh_in :rh_out)}
-        ;; Tages-Profil per HARMONISCHER REGRESSION je Reihe: y = c0 + c1*tau + c2*tau^2  (Mehrtages-Drift)
-        ;;                                                       + A*cos(w*hod) + B*sin(w*hod)  (Tageszyklus)
-        ;; tau = Stunden seit Start (Trend), hod = Stunde-des-Tages (UTC). So wird die langsame Drift sauber
-        ;; abgespalten und der reine Tageszyklus als glatte 24h-Kurve rekonstruiert - keine Spruenge, und
-        ;; mehr Tage machen es BESSER (mehr Stuetzstellen), nicht schlimmer.
-        diurnal-of (fn [field]
-                     (let [pts (->> s (filter #(some? (field %))) (sort-by :e) vec)
-                           n (count pts)]
-                       (when (>= n 36)
-                         (let [w (/ (* 2 Math/PI) 24.0) e0 (:e (first pts))
-                               vals (mapv field pts)
-                               gmean (/ (reduce + vals) (double n))
-                               X (mapv (fn [r] (let [tau (/ (- (:e r) e0) 3600.0)
-                                                     hod (mod (quot (:e r) 3600) 24)]
-                                                 [1.0 tau (* tau tau) (Math/cos (* w hod)) (Math/sin (* w hod))])) pts)
-                               xtx (vec (for [i (range 5)] (vec (for [j (range 5)] (reduce + (map (fn [row] (* (nth row i) (nth row j))) X))))))
-                               xty (vec (for [i (range 5)] (reduce + (map (fn [row v] (* (nth row i) v)) X vals))))
-                               beta (solve-lin xtx xty)
-                               A (nth beta 3) B (nth beta 4)]
-                           (mapv (fn [hod] (+ gmean (* A (Math/cos (* w hod))) (* B (Math/sin (* w hod))))) (range 24))))))
-        diurnal {:t_in (diurnal-of :t_in) :t_out (diurnal-of :t_out)
-                 :rh_in (diurnal-of :rh_in) :rh_out (diurnal-of :rh_out)}]
+        ;; Klima-Stil: pro Kanal ALLE einzelnen Tageskurven (24 h, ECHTE Messwerte), jede um ihren
+        ;; Tagesmittel auf 0 zentriert -> uebereinandergelegt zeigen sie die echte Streuung, die typische
+        ;; Form und wann der Peak clustert. KEINE Modell-Rekonstruktion, nur Daten.
+        daily-of (fn [field]
+                   (let [by-day (group-by #(quot (:e %) 86400) (filter #(some? (field %)) s))]
+                     (->> (sort (keys by-day))
+                          (keep (fn [d]
+                                  (let [byh (into {} (map (fn [r] [(mod (quot (:e r) 3600) 24) (field r)]) (by-day d)))]
+                                    (when (>= (count byh) 20)   ;; nur weitgehend volle Tage
+                                      (let [vs (vals byh) m (/ (reduce + vs) (double (count vs)))]
+                                        (mapv (fn [h] (when-let [v (byh h)] (- v m))) (range 24)))))))
+                          vec)))
+        daily-curves {:t_in (daily-of :t_in) :t_out (daily-of :t_out)
+                      :rh_in (daily-of :rh_in) :rh_out (daily-of :rh_out)}]
     (if (empty? s)
       {:time [] :status (:status @state) :days days :ha_debug @ha-debug :sensors @entities}
       {:time  (mapv :e s)
@@ -598,7 +590,7 @@
        :forecast (when (seq fc) {:time (mapv :e fc) :t_in (mapv :t_in fc) :t_out (mapv :t_out fc)})
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
-       :diurnal diurnal
+       :daily_curves daily-curves
        :ha_debug @ha-debug :sensors @entities})))
 
 (defn read-web [f ct]
@@ -616,7 +608,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.12")
+(def build-version "0.11.13")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
