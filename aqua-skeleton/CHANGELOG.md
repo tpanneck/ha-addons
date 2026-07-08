@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.11.5
+- Linienstaerken angehoben (Handy-Lesbarkeit): Minimum 2 statt 1, Hauptlinien 2.5, Trend 3.
+
 ## 0.11.4
 - Fix Deploy: die Aussen-Trendlinie aus 0.11.3 landete durch einen Kopier-Fehler NICHT in
   web/index.html im Repo -> das Image hatte das alte Frontend. Jetzt korrekt eingespielt.

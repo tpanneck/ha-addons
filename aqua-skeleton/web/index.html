@@ -132,12 +132,12 @@
       if(charts.c1){ charts.c1.destroy(); delete charts.c1; }  // Neuaufbau -> X-Achse inkl. Zukunft
       chart("c1","c1",{height:340,scales:{x:{time:true},C:{}},
         series:[{},
-          {label:"Innen (°C)",       scale:"C",stroke:"#c0392b",width:2,spanGaps:true},
-          {label:"Außen (°C)",       scale:"C",stroke:"#2980b9",width:1,spanGaps:true},
-          {label:"Modell (Fit)",     scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true},
-          {label:"Prognose Innen",   scale:"C",stroke:"#e67e22",width:2,dash:[2,3],spanGaps:true},
-          {label:"Prognose Außen",   scale:"C",stroke:"#2980b9",width:1.5,dash:[2,3],spanGaps:true},
-          {label:"Außen Trend 24h",  scale:"C",stroke:"#154360",width:2.5,spanGaps:true}],
+          {label:"Innen (°C)",       scale:"C",stroke:"#c0392b",width:2.5,spanGaps:true},
+          {label:"Außen (°C)",       scale:"C",stroke:"#2980b9",width:2,spanGaps:true},
+          {label:"Modell (Fit)",     scale:"C",stroke:"#8e44ad",width:2,dash:[6,4],spanGaps:true},
+          {label:"Prognose Innen",   scale:"C",stroke:"#e67e22",width:2.5,dash:[2,3],spanGaps:true},
+          {label:"Prognose Außen",   scale:"C",stroke:"#2980b9",width:2,dash:[2,3],spanGaps:true},
+          {label:"Außen Trend 24h",  scale:"C",stroke:"#154360",width:3,spanGaps:true}],
         axes:[{},{scale:"C",label:"°C"}]},
         [xall,tinP,toutP,backA,fcIn,fcOut,outTrend]);
 
@@ -148,9 +148,9 @@
         ["Taupunkt innen", fmt(lastNN(d.dew_in),1)+" °C","Kondensation < dieser T"],
       ]);
       chart("c2","c2",{height:260,scales:{x:{time:true},P:{range:[0,100]}},
-        series:[{},{label:"RH innen (%)",scale:"P",stroke:"#16a085",width:2,spanGaps:true},
-                {label:"RH außen (%)",scale:"P",stroke:"#27ae60",width:1,dash:[4,3],spanGaps:true},
-                {label:"Schimmel-Schwelle",scale:"P",stroke:"#c0392b",width:1,dash:[2,4]}],
+        series:[{},{label:"RH innen (%)",scale:"P",stroke:"#16a085",width:2.5,spanGaps:true},
+                {label:"RH außen (%)",scale:"P",stroke:"#27ae60",width:2,dash:[4,3],spanGaps:true},
+                {label:"Schimmel-Schwelle",scale:"P",stroke:"#c0392b",width:2,dash:[2,4]}],
         axes:[{},{scale:"P",label:"%"}]},
         [d.time,d.rh_in,d.rh_out,d.time.map(()=>75)]);
 
@@ -162,8 +162,8 @@
         ["Δ innen−außen", (qin!=null&&qout!=null?((qin-qout>=0?"+":"")+fmt(qin-qout,1)):"–")+" g/m³","Wände geben ab"],
       ]);
       chart("c3","c3",{height:260,scales:{x:{time:true},q:{}},
-        series:[{},{label:"q innen (g/m³)",scale:"q",stroke:"#16a085",width:2,spanGaps:true},
-                {label:"q außen (g/m³)",scale:"q",stroke:"#e67e22",width:1,dash:[4,3],spanGaps:true}],
+        series:[{},{label:"q innen (g/m³)",scale:"q",stroke:"#16a085",width:2.5,spanGaps:true},
+                {label:"q außen (g/m³)",scale:"q",stroke:"#e67e22",width:2,dash:[4,3],spanGaps:true}],
         axes:[{},{scale:"q",label:"g/m³"}]},
         [d.time,d.q_in,d.q_out]);
 
