@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.7
+- Innen-Sensor-Sparsity geloest: der Shelly sendet nur bei 0.1-Grad-Aenderung -> im traegen leeren
+  Haus stundenlang kein neuer Punkt. Jetzt wird der letzte bekannte Wert stuendlich bis JETZT
+  fortgeschrieben (Sensor gilt als aktiv; unveraenderte Temperatur = letzter Wert ist der aktuelle).
+  Sicherheitslimit 24 h, damit ein wirklich toter Sensor keine tagelange erfundene Flachlinie erzeugt.
+
 ## 0.11.6
 - FIX Anzeige brach beim letzten INNEN-Messwert ab (v0.11.2-Trim) -> bei sparsem Innensensor
   verschwand die AKTUELLE Aussentemperatur. Jetzt: volles Archiv (Aussen bis jetzt) + Innen-Prognose

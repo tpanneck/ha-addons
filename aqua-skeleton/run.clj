@@ -251,9 +251,31 @@
       (spit archive-file body))
     (catch Exception e (println "[aqua] Archiv-Schreibfehler" (.getMessage e)))))
 
+(defn ffill-to-now
+  "Schreibt den letzten bekannten Stundenwert bis zur aktuellen Stunde fort. Begruendung: Der Shelly
+   sendet nur bei 0.1-Grad-Aenderung, im traegen leeren Haus also stundenlang nichts - der Sensor
+   ist aber aktiv und eine unveraenderte Temperatur heisst, der letzte Wert IST der aktuelle. So
+   entsteht stuendlich ein Datenpunkt (wie beim History-Raster). Sicherheitslimit `max-h`, damit ein
+   wirklich toter Sensor keine tagelange erfundene Flachlinie erzeugt."
+  [m max-h]
+  (if (empty? m) m
+      (let [last-key (apply max-key #(or (hour->epoch %) 0) (keys m))
+            last-e (hour->epoch last-key)
+            last-v (get m last-key)
+            now-e (-> (java.time.Instant/now) (.atZone java.time.ZoneOffset/UTC)
+                      (.truncatedTo java.time.temporal.ChronoUnit/HOURS) .toEpochSecond)
+            cap-e (min now-e (+ last-e (* max-h 3600)))]
+        (loop [e (+ last-e 3600) acc m]
+          (if (> e cap-e) acc
+              (recur (+ e 3600)
+                     (assoc acc (.format (-> (java.time.Instant/ofEpochSecond e)
+                                             (.atZone java.time.ZoneOffset/UTC)) hour-fmt)
+                            last-v)))))))
+
 (defn build-archive []
   (let [in (or (indoor-hourly) {})
-        t-in (:t_in in) rh-in (:rh_in in)
+        ;; Innen-Sensor ist sparse (nur bei Aenderung) -> letzten Wert stuendlich bis jetzt fortschreiben.
+        t-in (ffill-to-now (:t_in in) 24) rh-in (ffill-to-now (:rh_in in) 24)
         out (or (outdoor-hourly) {})
         old (read-archive)
         keys (into #{} (concat (keys old) (keys t-in) (keys rh-in) (keys out)))
