@@ -13,6 +13,8 @@
     .cards{display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0}
     .card{background:#f4f7ff;border:1px solid #dde3f5;border-radius:8px;padding:.4rem .7rem;min-width:7rem}
     .card b{display:block;font-size:1.15rem}.card small{color:#667}
+    #controls button{cursor:pointer;border:1px solid #cdd6ee;background:#fff;border-radius:6px;padding:.2rem .6rem;margin-right:.2rem}
+    #controls button.active{background:#2980b9;color:#fff;border-color:#2980b9;font-weight:600}
     .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:.5rem 0}
     .dgrid .chart{height:190px}
     @media(max-width:620px){.dgrid{grid-template-columns:1fr}}
@@ -101,6 +103,7 @@
     let curWin=7;
     function load(days){
       curWin=days;
+      document.querySelectorAll("#controls button").forEach(b=>b.classList.toggle("active", parseInt(b.dataset.d)===days));
       document.getElementById("winnote").textContent = days?("· Fenster "+days+" Tage"):"· alle Daten";
       fetch("api/data"+(days?("?days="+days):"")).then(r=>r.json()).then(d=>render(d))
         .catch(e=>document.getElementById("status").innerHTML='<span class="err">Fehler: '+e+'</span>');
@@ -146,11 +149,14 @@
       const outTrend = smooth(outAll,12);
       const nFut=futT.length;
       const ageH = li>=0? Math.round((lastArch-d.time[li])/3600) : null;   // Alter letzter Innen-Messwert
+      const fixed = t.mode==="fixed";
       cards("c1cards",[
         ["Innen T", fmt(lastNN(d.t_in),1)+" °C", (ageH!=null&&ageH>=2)?("Messung vor "+ageH+" h"):""],
         ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
-        ["τ Abkling", fmt(t.tau_d,1)+" d", "R²="+fmt(t.r2,3)],
-        ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"],
+        ["τ Abkling", fmt(t.tau_d,1)+" d", fixed?"fest vorgegeben":("R²="+fmt(t.r2,3))],
+        ["W/K = C/τ", fmt(t.wk,0)+" W/K", fixed?"fixed_wk (Heizbetrieb)":("C="+fmt(t.c_mj,0)+" MJ/K")],
+        ["Frostwächter", t.kw_design!=null?fmt(t.kw_design,1)+" kW":"–",
+         "+"+fmt(t.frost_set,0)+" °C bei "+fmt(t.design_out,0)+" °C außen"],
         ["Prognose", nFut?("+"+Math.round(nFut/24)+" Tage"):"–",
          nFut?("bis "+new Date(futT[nFut-1]*1000).toLocaleDateString()):"aus Forecast"],
       ]);

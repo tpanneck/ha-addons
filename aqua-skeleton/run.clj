@@ -29,6 +29,10 @@
 (def humidity-sensor (or (:humidity_sensor opts) "sensor.wohnzimmer_shelly_2_luftfeuchtigkeit"))
 (def history-days (int (or (:days opts) 14)))  ;; nur so viel Historie lesen, wie sinnvoll da ist
 (def c-mj-estimate (double (or (:c_mj opts) 290.0)))  ;; Speichermasse C [MJ/K] (physikal. Anker); W/K = C/tau
+(def model-mode (or (:model_mode opts) "auto"))       ;; "auto" = fitten, "fixed" = feste W/K (Heizbetrieb)
+(def fixed-wk   (double (or (:fixed_wk opts) 450.0))) ;; W/K, wenn model_mode=fixed
+(def frost-set  (double (or (:frost_setpoint opts) 5.0)))    ;; Innen-Sollwert fuer kW-Auslegung
+(def design-out (double (or (:design_outdoor opts) -15.0)))  ;; Auslegungs-Aussentemperatur
 
 ;; ---------- lineare Algebra (verifiziert) ----------
 (defn solve-linear [A b]
@@ -395,7 +399,11 @@
                                      (recur (inc k) (+ (* al tb) (* a (nth tout k))) (+ sse (* e e))))))))
                   grid (map #(Math/exp %)
                             (map #(+ (Math/log 0.001) (* % (/ (- (Math/log 0.06) (Math/log 0.001)) 100.0))) (range 101)))
-                  {:keys [a sse]} (apply min-key :sse (map eval-a grid))
+                  ;; a: aus Messung fitten (auto) ODER fest aus config (fixed) - im Heizbetrieb geht der
+                  ;; Freilauf-Fit nicht, dann feste W/K: a = dt/tau = dt*UA/C (Euler, pro Stunde).
+                  {:keys [a sse]} (if (= model-mode "fixed")
+                                    (eval-a (/ (* 3600.0 fixed-wk) (* c-mj-estimate 1e6)))
+                                    (apply min-key :sse (map eval-a grid)))
                   r2 (if (pos? sst) (- 1.0 (/ sse sst)) 0.0)
                   ;; Gezeichnete Modell-Kurve = Vorwaerts-Freilauf ab erster Messung. Das ist GENAU die
                   ;; Trajektorie, die der Fit minimiert, und numerisch stabil (abklingend). Die frueher
@@ -592,7 +600,10 @@
        :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)
                           :tau_daily (:tau-daily tm) :damp (:damp tm)
                           :a_in (:a-in tm) :a_out (:a-out tm) :xcorr (:xcorr tm)
-                          :acf_in (:acf-in tm) :acf_out (:acf-out tm) :daily (:daily tm)})
+                          :acf_in (:acf-in tm) :acf_out (:acf-out tm) :daily (:daily tm)
+                          :mode model-mode :frost_set frost-set :design_out design-out
+                          ;; Auslegungs-Waermeleistung = UA * (Sollwert - Auslegungs-Aussentemp)
+                          :kw_design (/ (* (:wk tm) (- frost-set design-out)) 1000.0)})
        :corr corr
        :forecast (when (seq fc) {:time (mapv :e fc) :t_in (mapv :t_in fc) :t_out (mapv :t_out fc)})
        :indoor_hours n-in :indoor_span_days span-d :days days
@@ -615,7 +626,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.15")
+(def build-version "0.11.16")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})

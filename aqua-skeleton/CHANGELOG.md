@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.16
+- Kachel "Frostwaechter": Auslegungs-Waermeleistung = UA * (Sollwert - Auslegungs-Aussentemp),
+  Default +5 C bei -15 C -> zeigt den max. kW-Bedarf (nur Anzeige, keine Warnung).
+- Config model_mode: auto|fixed. Im Winter/Heizbetrieb geht der Freilauf-Fit nicht -> "fixed" nutzt
+  feste W/K (fixed_wk) statt zu fitten. Neue Optionen: model_mode, fixed_wk, frost_setpoint, design_outdoor.
+- UI: aktiver Fenster-Button (3/7/14/Alle) wird jetzt hervorgehoben.
+
 ## 0.11.15
 - Tages-Analyse-Tabelle: "Max (h UTC)" war falsch (harmonic-fit-Phase relativ zum Fensteranfang, nicht
   UTC) -> z.B. T_aussen-Max faelschlich 19h statt nachmittags. Jetzt "Max (lokal)" + Tagesgang
