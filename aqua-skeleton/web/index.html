@@ -157,6 +157,8 @@
         ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"+(fixed?" · τ fest":"")],
         ["Frostwächter", t.kw_design!=null?fmt(t.kw_design,1)+" kW":"–",
          "+"+fmt(t.frost_set,0)+" °C bei "+fmt(t.design_out,0)+" °C außen"],
+        ["Wärmebedarf", d.heat_kwh!=null?fmt(d.heat_kwh,0)+" kWh":"–",
+         "Prognose "+(d.heat_days?Math.round(d.heat_days):"?")+" T, für +"+fmt(t.frost_set,0)+" °C"],
         ["Prognose", nFut?("+"+Math.round(nFut/24)+" Tage"):"–",
          nFut?("bis "+new Date(futT[nFut-1]*1000).toLocaleDateString()):"aus Forecast"],
       ]);

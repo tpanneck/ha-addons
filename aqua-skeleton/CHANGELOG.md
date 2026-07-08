@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.18
+- Prognose auf 14 Tage (forecast_days=14, take-Limit hoch).
+- Neue Kachel "Waermebedarf": Summe UA*(Sollwert - T_aussen) ueber die Prognose-Stunden, in denen
+  geheizt werden muss -> kWh fuer die naechsten ~14 Tage (fuer +5 C Sollwert). Im Sommer ~0 (aussen
+  ueber Sollwert), im Winter der echte Heizbedarf. Nutzt W/K (= C/tau, im fixed-Modus festes tau).
+
 ## 0.11.17
 - Korrektur Konvention: TAU ist der freie Parameter, C der Anker. fixed-Modus nimmt jetzt festes
   fixed_tau [Tage] (nicht mehr W/K); W/K = C/tau folgt automatisch. Der feste tau speist Modell,

@@ -452,7 +452,7 @@
 
 (defn forecast-outdoor []
   (let [u (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
-               "&hourly=temperature_2m,shortwave_radiation&past_days=0&forecast_days=7&timezone=UTC")
+               "&hourly=temperature_2m,shortwave_radiation&past_days=0&forecast_days=14&timezone=UTC")
         h (:hourly (om-get u))]
     (when h
       (->> (map (fn [ti te ra] (when (some? te) {:e (hour->epoch ti) :t_out te :solar (or ra 0.0)}))
@@ -478,7 +478,7 @@
                          (map (fn [r] {:e (:e r) :t_out (:t_out r)})))
                 ;; danach der echte Forecast (Stunden nach dem Archivende)
                 fut (filter #(> (:e %) emax) (or (forecast-outdoor) []))
-                timeline (take 160 (concat gap fut))]
+                timeline (take 380 (concat gap fut))]   ;; ~14 Tage Prognose + evtl. Sensor-Luecke
             (when (seq timeline)
               (loop [fs timeline tprev t0 acc []]
                 (if (empty? fs) acc   ;; vorwaerts (aufsteigende Zeit)
@@ -556,6 +556,11 @@
         n-in (count in-eps)
         tm (thermal-model warch)
         fc (forecast-series tm warch)
+        ;; Waermebedarf ueber die Prognose = Summe UA*(Sollwert - T_aussen) fuer alle Stunden, in denen
+        ;; geheizt werden muss (T_aussen < Sollwert). Pro Stunde W -> Wh, /1000 -> kWh ueber das Fenster.
+        heat-kwh (when (and tm (seq fc))
+                   (/ (reduce + (map (fn [f] (* (:wk tm) (max 0.0 (- frost-set (:t_out f))))) fc)) 1000.0))
+        heat-days (when (seq fc) (/ (- (:e (last fc)) (:e (first fc))) 86400.0))
         span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))
         ;; Korrelationen (nur Stunden mit beiden Werten)
         q-of (fn [r] (abs-hum (:t_in r) (:rh_in r)))
@@ -607,6 +612,7 @@
                           :kw_design (/ (* (:wk tm) (- frost-set design-out)) 1000.0)})
        :corr corr
        :forecast (when (seq fc) {:time (mapv :e fc) :t_in (mapv :t_in fc) :t_out (mapv :t_out fc)})
+       :heat_kwh heat-kwh :heat_days heat-days
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
        :daily_curves daily-curves
@@ -627,7 +633,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.17")
+(def build-version "0.11.18")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
