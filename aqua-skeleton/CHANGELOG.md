@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.17
+- Korrektur Konvention: TAU ist der freie Parameter, C der Anker. fixed-Modus nimmt jetzt festes
+  fixed_tau [Tage] (nicht mehr W/K); W/K = C/tau folgt automatisch. Der feste tau speist Modell,
+  Prognose UND die kW-Auslegung.
+- Sektion 4: "tau aus Daempfung" wird jetzt immer angezeigt (2. unabhaengiger Schaetzer:
+  tau = sqrt(Daempfung^2-1)/omega), neben dem Abkling-tau -> Kreuz-Validierung sichtbar.
+
 ## 0.11.16
 - Kachel "Frostwaechter": Auslegungs-Waermeleistung = UA * (Sollwert - Auslegungs-Aussentemp),
   Default +5 C bei -15 C -> zeigt den max. kW-Bedarf (nur Anzeige, keine Warnung).

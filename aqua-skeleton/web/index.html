@@ -153,8 +153,8 @@
       cards("c1cards",[
         ["Innen T", fmt(lastNN(d.t_in),1)+" °C", (ageH!=null&&ageH>=2)?("Messung vor "+ageH+" h"):""],
         ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
-        ["τ Abkling", fmt(t.tau_d,1)+" d", fixed?"fest vorgegeben":("R²="+fmt(t.r2,3))],
-        ["W/K = C/τ", fmt(t.wk,0)+" W/K", fixed?"fixed_wk (Heizbetrieb)":("C="+fmt(t.c_mj,0)+" MJ/K")],
+        ["τ Abkling", fmt(t.tau_d,1)+" d", fixed?"fest vorgegeben (Heizbetrieb)":("R²="+fmt(t.r2,3))],
+        ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"+(fixed?" · τ fest":"")],
         ["Frostwächter", t.kw_design!=null?fmt(t.kw_design,1)+" kW":"–",
          "+"+fmt(t.frost_set,0)+" °C bei "+fmt(t.design_out,0)+" °C außen"],
         ["Prognose", nFut?("+"+Math.round(nFut/24)+" Tage"):"–",
@@ -201,8 +201,12 @@
       // 4 Tages-Analyse (harmonische Regression)
       const dl=t.daily||{};
       const A=(o,u)=>o?fmt(o.amp,2)+" "+u:"–", P=(o)=>o?fmt(o.phase,1)+" h":"–";
+      // τ aus der Tages-Dämpfung: Dämpfung = √(1+(ωτ)²) → τ = √(D²−1)/ω  (2. unabh. Schätzer, robust)
+      const wDay=2*Math.PI/24;
+      const tauDamp=(dl.t_damp&&dl.t_damp>1)?Math.sqrt(dl.t_damp*dl.t_damp-1)/wDay/24:null;
       cards("c4cards",[
         ["T-Dämpfung", dl.t_damp!=null?fmt(dl.t_damp,0)+"×":"–", "Tagesgang außen/innen"],
+        ["τ aus Dämpfung", tauDamp!=null?fmt(tauDamp,1)+" d":"–", "2. Schätzer (vs. Abkling-τ)"],
         ["T-Lag", dl.t_lag!=null?fmt(dl.t_lag,1)+" h":"–", "innen hinter außen"],
         ["RH innen ~ T innen", fmt(c.t_rh,2), "Thermometer"],
         ["RH innen ~ RH außen", fmt(c.rh_in_out,2), "Außen-Kopplung"],

@@ -29,8 +29,8 @@
 (def humidity-sensor (or (:humidity_sensor opts) "sensor.wohnzimmer_shelly_2_luftfeuchtigkeit"))
 (def history-days (int (or (:days opts) 14)))  ;; nur so viel Historie lesen, wie sinnvoll da ist
 (def c-mj-estimate (double (or (:c_mj opts) 290.0)))  ;; Speichermasse C [MJ/K] (physikal. Anker); W/K = C/tau
-(def model-mode (or (:model_mode opts) "auto"))       ;; "auto" = fitten, "fixed" = feste W/K (Heizbetrieb)
-(def fixed-wk   (double (or (:fixed_wk opts) 450.0))) ;; W/K, wenn model_mode=fixed
+(def model-mode (or (:model_mode opts) "auto"))       ;; "auto" = tau fitten, "fixed" = festes tau (Heizbetrieb)
+(def fixed-tau  (double (or (:fixed_tau opts) 7.0)))  ;; tau [Tage], wenn model_mode=fixed; W/K = C/tau folgt
 (def frost-set  (double (or (:frost_setpoint opts) 5.0)))    ;; Innen-Sollwert fuer kW-Auslegung
 (def design-out (double (or (:design_outdoor opts) -15.0)))  ;; Auslegungs-Aussentemperatur
 
@@ -399,10 +399,11 @@
                                      (recur (inc k) (+ (* al tb) (* a (nth tout k))) (+ sse (* e e))))))))
                   grid (map #(Math/exp %)
                             (map #(+ (Math/log 0.001) (* % (/ (- (Math/log 0.06) (Math/log 0.001)) 100.0))) (range 101)))
-                  ;; a: aus Messung fitten (auto) ODER fest aus config (fixed) - im Heizbetrieb geht der
-                  ;; Freilauf-Fit nicht, dann feste W/K: a = dt/tau = dt*UA/C (Euler, pro Stunde).
+                  ;; a: aus Messung fitten (auto) ODER festes tau aus config (fixed) - im Heizbetrieb geht
+                  ;; der Freilauf-Fit nicht. tau ist der freie Parameter; a = dt/tau = 1/(tau_d*24) (Euler,
+                  ;; pro Stunde). W/K = C/tau folgt daraus automatisch (C bleibt der Anker).
                   {:keys [a sse]} (if (= model-mode "fixed")
-                                    (eval-a (/ (* 3600.0 fixed-wk) (* c-mj-estimate 1e6)))
+                                    (eval-a (/ 1.0 (* fixed-tau 24.0)))
                                     (apply min-key :sse (map eval-a grid)))
                   r2 (if (pos? sst) (- 1.0 (/ sse sst)) 0.0)
                   ;; Gezeichnete Modell-Kurve = Vorwaerts-Freilauf ab erster Messung. Das ist GENAU die
@@ -626,7 +627,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.16")
+(def build-version "0.11.17")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
