@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.11
+- Debug-Trace (Sektion 0) wieder entfernt.
+- NEU Tagesprofil-Chart in Sektion 4: je Messreihe die gemittelte 24-h-Kurve (Mittel pro Stunde),
+  auf 0-100%% der Eigen-Spanne normiert -> zeigt WANN jede Groesse ihr Max hat und wie stark die
+  Reihen gegeneinander verschoben sind. Kacheln nennen die reale Spanne (low-high) + Max-Uhrzeit.
+  Zeitachse lokal.
+
 ## 0.11.10
 - ECHTER Fix "Karte/Anzeige zeigt 14.7 (23:00-Nacht-Forecast) statt jetzt": 0.11.9 beschnitt nur den
   NEUEN Wetter-Abruf, aber die Zukunfts-Stunden lagen schon im persistierten Archiv (build-archive

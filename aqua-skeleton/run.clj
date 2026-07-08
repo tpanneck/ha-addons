@@ -554,7 +554,15 @@
                                                 (when (and (some? x) (some? y)) [x y]))) s)]
                          (when (seq ps) (pearson (mapv first ps) (mapv second ps)))))
         corr {:t_rh (pr :t_in :rh_in) :t_q (pr :t_in q-of) :tout_tin (pr :t_out :t_in)
-              :rh_in_out (pr :rh_in :rh_out)}]
+              :rh_in_out (pr :rh_in :rh_out)}
+        ;; Tages-Profil: je Messreihe der Mittelwert pro Stunde-des-Tages (UTC) -> 24-h-Kurve,
+        ;; zeigt Schwankung (low..high) und WANN das Max kommt.
+        diurnal-of (fn [field]
+                     (let [by-h (group-by #(mod (quot (:e %) 3600) 24) (filter #(some? (field %)) s))]
+                       (mapv (fn [h] (let [vs (keep field (get by-h h []))]
+                                       (when (seq vs) (/ (reduce + vs) (double (count vs)))))) (range 24))))
+        diurnal {:t_in (diurnal-of :t_in) :t_out (diurnal-of :t_out)
+                 :rh_in (diurnal-of :rh_in) :rh_out (diurnal-of :rh_out)}]
     (if (empty? s)
       {:time [] :status (:status @state) :days days :ha_debug @ha-debug :sensors @entities}
       {:time  (mapv :e s)
@@ -576,12 +584,7 @@
        :forecast (when (seq fc) {:time (mapv :e fc) :t_in (mapv :t_in fc) :t_out (mapv :t_out fc)})
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
-       ;; TRACE: die letzten ROHEN Archivzeilen (t_in/t_out/Zeitstempel) + Server-Zeit, damit man
-       ;; in der UI direkt sieht, bis wann Daten reichen und wo Loecher sind.
-       :trace {:now (str (java.time.Instant/now))
-               :display_last (when (seq s) (:e (last s)))
-               :raw_last (->> rows-all (sort-by :e) (take-last 20)
-                              (mapv (fn [r] {:ts (:ts r) :t_in (:t_in r) :t_out (:t_out r) :rh_in (:rh_in r)})))}
+       :diurnal diurnal
        :ha_debug @ha-debug :sensors @entities})))
 
 (defn read-web [f ct]
@@ -599,7 +602,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.10")
+(def build-version "0.11.11")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
