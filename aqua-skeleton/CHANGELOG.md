@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.4
+- Fix Deploy: die Aussen-Trendlinie aus 0.11.3 landete durch einen Kopier-Fehler NICHT in
+  web/index.html im Repo -> das Image hatte das alte Frontend. Jetzt korrekt eingespielt.
+
 ## 0.11.3
 - Geglaettete Aussen-Trendlinie (zentrierter 24h-Mittelwert) ueber Messung UND Prognose durchgehend
   im Temperatur-Chart. Killt den Tagesgang -> zeigt das "effektive" Aussen, dem die traege
