@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.12
+- Tagesprofil-Chart: Kurven waren ruppig (v.a. T_innen, bei 14 Tagen schlimmer), weil das naive
+  Stunden-Mittel die Mehrtages-Drift (~0.7 K/Woche) als Spruenge reinliess. Jetzt per harmonischer
+  Regression je Reihe: Trend (tau+tau^2) abgespalten, Tageszyklus (cos/sin ueber Stunde-des-Tages)
+  als glatte 24h-Kurve rekonstruiert. Keine Spruenge; mehr Tage = mehr Stuetzstellen = besser.
+
 ## 0.11.11
 - Debug-Trace (Sektion 0) wieder entfernt.
 - NEU Tagesprofil-Chart in Sektion 4: je Messreihe die gemittelte 24-h-Kurve (Mittel pro Stunde),
