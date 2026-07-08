@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.1
+- FIX Chart-Glitch: Prognose begann bei heute 00:00 (Open-Meteo past_days=0), also VOR dem letzten
+  Archiv-Punkt (Aussen reicht weiter als der sparse Innensensor) -> xall nicht monoton -> uPlot zog
+  einen Strich rueckwaerts. Prognose startet jetzt strikt NACH dem letzten Archiv-Punkt.
+- Modell-Kurve im Chart ist jetzt der VORWAERTS-Freilauf (= was der Fit minimiert, RMSE 0.16 statt
+  0.66 rueckwaerts). Die frueher gezeigte Rueckwaerts-Integration war numerisch instabil (1/(1-a) je
+  Schritt) und wich ueber 14 Tage sichtbar ab. Label "Modell rueckw." -> "Modell (Fit)".
+- Forecast-Fenster auf 7 Tage angehoben, damit nach dem Trim ~5 Zukunftstage bleiben.
+
 ## 0.11.0
 - Modell-Korrektur: reines Leitungsmodell dT/dt = (1/tau)(Taussen - Tinnen), OHNE konstanten
   Term g (und ohne g-Korrektur). g war unphysikalisch (Dauer-Abkuehlung ohne Gleichgewicht) und

@@ -32,8 +32,9 @@
 
   <div class="section">
     <h2>1 · Temperatur (+ 5-Tage-Prognose)</h2>
-    <p class="expl">Innen (gemessen) vs. Außen, das rückwärts integrierte Modell — und die <b>Prognose</b>:
-       dasselbe RC-Modell <b>vorwärts</b> über den Open-Meteo-Forecast integriert (gepunktet, orange).
+    <p class="expl">Innen (gemessen) vs. Außen, die <b>gefittete Modell-Kurve</b> (Vorwärts-Freilauf, minimiert
+       genau den Fehler zum Messwert) — und die <b>Prognose</b>: dasselbe RC-Modell vorwärts über den
+       Open-Meteo-Forecast integriert (gepunktet, orange).
        τ misst die träge Kernmasse; W/K = C/τ.</p>
     <div id="c1cards" class="cards"></div><div id="c1" class="chart"></div>
   </div>
@@ -109,7 +110,7 @@
       const xall=d.time.concat(fc.time);
       const tinP=d.t_in.concat(padF);
       const toutP=d.t_out.concat(padF);
-      const backA=(d.t_back||nul).concat(padF);
+      const backA=(d.t_model||nul).concat(padF);
       const fcIn=padP.concat(fc.t_in);   if(nF&&nP) fcIn[nP-1]=lastNN(d.t_in);
       const fcOut=padP.concat(fc.t_out); if(nF&&nP) fcOut[nP-1]=lastNN(d.t_out);
       cards("c1cards",[
@@ -125,7 +126,7 @@
         series:[{},
           {label:"Innen (°C)",       scale:"C",stroke:"#c0392b",width:2,spanGaps:true},
           {label:"Außen (°C)",       scale:"C",stroke:"#2980b9",width:1,spanGaps:true},
-          {label:"Modell rückw.",    scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true},
+          {label:"Modell (Fit)",     scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true},
           {label:"Prognose Innen",   scale:"C",stroke:"#e67e22",width:2,dash:[2,3],spanGaps:true},
           {label:"Prognose Außen",   scale:"C",stroke:"#2980b9",width:1.5,dash:[2,3],spanGaps:true}],
         axes:[{},{scale:"C",label:"°C"}]},

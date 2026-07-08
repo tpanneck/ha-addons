@@ -369,11 +369,12 @@
                             (map #(+ (Math/log 0.001) (* % (/ (- (Math/log 0.06) (Math/log 0.001)) 100.0))) (range 101)))
                   {:keys [a sse]} (apply min-key :sse (map eval-a grid))
                   r2 (if (pos? sst) (- 1.0 (/ sse sst)) 0.0)
-                  back (vec (reverse
-                             (reduce (fn [acc k]
-                                       (conj acc (/ (- (peek acc) (* a (nth tout (dec k)))) (- 1.0 a))))
-                                     [(double (nth tin (dec n)))]
-                                     (range (dec n) 0 -1))))
+                  ;; Gezeichnete Modell-Kurve = Vorwaerts-Freilauf ab erster Messung. Das ist GENAU die
+                  ;; Trajektorie, die der Fit minimiert, und numerisch stabil (abklingend). Die frueher
+                  ;; gezeigte Rueckwaerts-Integration verstaerkt den Fehler je Schritt um 1/(1-a) -> lief
+                  ;; ueber 14 Tage auseinander (gemessen: RMSE 0.66 statt 0.16 vorwaerts).
+                  fwd (vec (reductions (fn [t k] (+ (* (- 1.0 a) t) (* a (nth tout k))))
+                                       (double (first tin)) (range (dec n))))
                   tau-h (/ 1.0 a) tau-d (/ tau-h 24.0)
                   wk (/ (* c-mj-estimate 1e6) (* tau-h 3600.0))   ;; W/K = C / tau
                   daily-amp (fn [ser] (let [ds (partition-all 24 ser)]
@@ -409,12 +410,12 @@
               {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate :a a
                :tau-daily tau-daily :damp damp :a-in a-in :a-out a-out :xcorr xcorr
                :acf-in acf-in :acf-out acf-out :daily daily
-               :back (zipmap hrs back)})))))
+               :model (zipmap hrs fwd)})))))
     (catch Exception e (println "[aqua] thermal-model Fehler:" (.getMessage e)) nil)))
 
 (defn forecast-outdoor []
   (let [u (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
-               "&hourly=temperature_2m,shortwave_radiation&past_days=0&forecast_days=6&timezone=UTC")
+               "&hourly=temperature_2m,shortwave_radiation&past_days=0&forecast_days=7&timezone=UTC")
         h (:hourly (om-get u))]
     (when h
       (->> (map (fn [ti te ra] (when (some? te) {:e (hour->epoch ti) :t_out te :solar (or ra 0.0)}))
@@ -427,16 +428,24 @@
   (when (and tm (:a tm))
     (try
       (let [a (:a tm)
-            last-in (last (filter :t_in (archive->rows arch)))]
-        (when last-in
+            rows (archive->rows arch)
+            last-in (last (filter :t_in rows))
+            e-arch (:e (last rows))]     ;; letzter GEPLOTTETER Archiv-Punkt (Aussen reicht weiter als Innen)
+        (when (and last-in e-arch)
           (let [e0 (:e last-in) t0 (double (:t_in last-in))
-                fut (take 120 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
+                ;; ab letzter Innen-Messung integrieren (State ueber die Sparse-Luecke propagieren),
+                ;; aber nur Punkte NACH dem Archiv-Ende ausgeben -> xall bleibt streng monoton,
+                ;; kein Rueckwaerts-Strich mehr im Chart (der Forecast begann sonst bei heute 00:00).
+                fut (take 130 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
             (when (seq fut)
               (loop [fs fut tprev t0 acc []]
                 (if (empty? fs) acc   ;; vorwaerts (aufsteigende Zeit)
                     (let [f (first fs)
                           tn (+ tprev (* a (- (:t_out f) tprev)))]   ;; rein: dT/dt = a*(Tout - T)
-                      (recur (rest fs) tn (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})))))))))
+                      (recur (rest fs) tn
+                             (if (> (:e f) e-arch)
+                               (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})
+                               acc)))))))))
       (catch Exception e (println "[aqua] forecast Fehler:" (.getMessage e)) nil))))
 
 ;; ---------- State / Loop ----------
@@ -488,7 +497,7 @@
        :q_in  (mapv #(abs-hum (:t_in %) (:rh_in %)) s)
        :q_out (mapv #(abs-hum (:t_out %) (:rh_out %)) s)
        :dew_in (mapv #(dew-point (:t_in %) (:rh_in %)) s)
-       :t_back (when tm (mapv #(get (:back tm) (:e %)) s))
+       :t_model (when tm (mapv #(get (:model tm) (:e %)) s))
        :rh_in (mapv :rh_in s)
        :rh_out (mapv :rh_out s)
        :thermal (when tm {:tau_d (:tau-d tm) :r2 (:r2 tm) :wk (:wk tm) :c_mj (:c-mj tm)
