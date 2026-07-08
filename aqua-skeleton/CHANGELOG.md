@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.10
+- ECHTER Fix "Karte/Anzeige zeigt 14.7 (23:00-Nacht-Forecast) statt jetzt": 0.11.9 beschnitt nur den
+  NEUEN Wetter-Abruf, aber die Zukunfts-Stunden lagen schon im persistierten Archiv (build-archive
+  merged alt+neu, behielt sie). Jetzt wirft build-response ALLE Stunden > aktuelle Stunde aus der
+  Messanzeige (Karte, Chart, Trace) - Zukunft kommt nur noch aus der separaten Prognose-Linie.
+
 ## 0.11.9
 - BUGFIX (Ursache "endet morgens mit 14.7 Grad"): outdoor-hourly zog per forecast_days=1 den REST
   des heutigen Tages als FORECAST mit in die "gemessene" Aussenkurve -> letzte Zeile war 23:00 UTC

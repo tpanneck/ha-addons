@@ -525,7 +525,12 @@
   "Antwort fuer /api/data, optional auf die letzten `days` Tage gefenstert
    (Fenster <= ~9 d schneidet das Umzugs-Rauschen weg). Fit wird pro Fenster gerechnet."
   [days]
-  (let [arch (:archive @state)
+  (let [arch0 (:archive @state)
+        now-h (-> (java.time.Instant/now) (.atZone java.time.ZoneOffset/UTC)
+                  (.truncatedTo java.time.temporal.ChronoUnit/HOURS) .toEpochSecond)
+        ;; Zukunfts-Stunden (frueher persistierter Forecast) aus der MESSANZEIGE werfen -> Anzeige/Karte
+        ;; enden bei der aktuellen Stunde, nicht beim 23:00-Nacht-Forecast. Zukunft nur via Prognose.
+        arch (into {} (filter (fn [[ts _]] (when-let [e (hour->epoch ts)] (<= e now-h))) arch0))
         rows-all (archive->rows arch)
         maxe (when (seq rows-all) (apply max (map :e rows-all)))
         cutoff (when (and days (pos? days) maxe) (- maxe (* days 86400)))
@@ -594,7 +599,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.9")
+(def build-version "0.11.10")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})
