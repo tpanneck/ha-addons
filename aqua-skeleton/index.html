@@ -35,6 +35,8 @@
     <p class="expl">Innen (gemessen) vs. Außen, die <b>gefittete Modell-Kurve</b> (Vorwärts-Freilauf, minimiert
        genau den Fehler zum Messwert) — und die <b>Prognose</b>: dasselbe RC-Modell vorwärts über den
        Open-Meteo-Forecast integriert (gepunktet, orange).
+       Die dicke dunkelblaue <b>Außen-Trendlinie</b> (24h-Mittel, Messung+Prognose durchgehend) killt
+       den Tagesgang und zeigt das „effektive" Außen, dem die träge Innentemperatur folgt.
        τ misst die träge Kernmasse; W/K = C/τ.</p>
     <div id="c1cards" class="cards"></div><div id="c1" class="chart"></div>
   </div>
@@ -113,6 +115,12 @@
       const backA=(d.t_model||nul).concat(padF);
       const fcIn=padP.concat(fc.t_in);   if(nF&&nP) fcIn[nP-1]=lastNN(d.t_in);
       const fcOut=padP.concat(fc.t_out); if(nF&&nP) fcOut[nP-1]=lastNN(d.t_out);
+      // Geglättete Außen-Trendlinie über Messung UND Prognose (durchgehend, kein Sprung an "jetzt").
+      // Zentrierter 24h-Mittelwert (±12h) killt den Tagesgang -> zeigt das "effektive" Außen,
+      // dem die träge Innentemperatur (Tiefpass ~τ) folgt -> Kopplung visuell abschätzbar.
+      const outAll = xall.map((_,i)=> i<nP ? d.t_out[i] : fc.t_out[i-nP]);
+      const smooth=(arr,half)=>arr.map((_,i)=>{let s=0,c=0,lo=Math.max(0,i-half),hi=Math.min(arr.length-1,i+half);for(let j=lo;j<=hi;j++){const v=arr[j];if(v!=null){s+=v;c++;}}return c?s/c:null;});
+      const outTrend = smooth(outAll,12);
       cards("c1cards",[
         ["Innen T", fmt(lastNN(d.t_in),1)+" °C",""],
         ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
@@ -128,9 +136,10 @@
           {label:"Außen (°C)",       scale:"C",stroke:"#2980b9",width:1,spanGaps:true},
           {label:"Modell (Fit)",     scale:"C",stroke:"#8e44ad",width:1.5,dash:[6,4],spanGaps:true},
           {label:"Prognose Innen",   scale:"C",stroke:"#e67e22",width:2,dash:[2,3],spanGaps:true},
-          {label:"Prognose Außen",   scale:"C",stroke:"#2980b9",width:1.5,dash:[2,3],spanGaps:true}],
+          {label:"Prognose Außen",   scale:"C",stroke:"#2980b9",width:1.5,dash:[2,3],spanGaps:true},
+          {label:"Außen Trend 24h",  scale:"C",stroke:"#154360",width:2.5,spanGaps:true}],
         axes:[{},{scale:"C",label:"°C"}]},
-        [xall,tinP,toutP,backA,fcIn,fcOut]);
+        [xall,tinP,toutP,backA,fcIn,fcOut,outTrend]);
 
       // 2 relative Feuchte
       cards("c2cards",[

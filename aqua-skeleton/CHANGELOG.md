@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.3
+- Geglaettete Aussen-Trendlinie (zentrierter 24h-Mittelwert) ueber Messung UND Prognose durchgehend
+  im Temperatur-Chart. Killt den Tagesgang -> zeigt das "effektive" Aussen, dem die traege
+  Innentemperatur (Haus = Tiefpass ~tau) folgt -> Kopplung Aussen<->Innen visuell abschaetzbar.
+
 ## 0.11.2
 - FIX Prognose-Anschluss: setzte erst nach dem letzten AUSSEN-Archivpunkt an, der Innensensor
   ist aber sparse (im Test 25 h aelter) -> sichtbare Luecke + vor-integrierter Sprung (-0.65 C).
