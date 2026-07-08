@@ -336,8 +336,9 @@
                       (recur b (rest more))))))))
 
 (defn thermal-model
-  "Free-run-RC ueber Stundenraster: dT/dt = a*(Tout-T) + b*Solar + g.
-   a per Grid-Suche, b,g per OLS. tau=1/a. C = W/K * tau. Rueckwaerts-Projektion von letzter Messung."
+  "Reines Leitungs-RC ueber Stundenraster: dT/dt = a*(Tout - T). Nur a (tau) per Grid-Suche,
+   KEIN konstanter Term g (der machte die Prognose unphysikalisch/fensterabhaengig).
+   tau=1/a. W/K = C/tau. Rueckwaerts-Projektion + Vorwaerts-Prognose beide physikalisch beschraenkt."
   [arch]
   (try
     (let [rows (archive->rows arch)
@@ -356,33 +357,21 @@
                   rhout (mapv #(get-in om [% :rh_out]) hrs)
                   mean (/ (reduce + tin) n)
                   sst (reduce + (map #(let [d (- % mean)] (* d d)) tin))
+                  ;; REINES Leitungsmodell: dT/dt = a*(Tout - T). Nur a (tau) gefittet, KEIN b/g.
+                  ;; Physikalisch beschraenkt: Innen laeuft immer zur Aussentemperatur, nie darunter/darueber.
                   eval-a (fn [a]
                            (let [al (- 1.0 a)]
-                             (loop [k 0 tb (double (first tin)) ts 0.0 to 0.0 B [] S [] O []]
-                               (if (= k n)
-                                 (let [r (mapv - tin B)
-                                       s11 (reduce + (map * S S)) s12 (reduce + (map * S O)) s22 (reduce + (map * O O))
-                                       sy1 (reduce + (map * S r)) sy2 (reduce + (map * O r))
-                                       det (- (* s11 s22) (* s12 s12))
-                                       [b g] (if (zero? det) [0.0 0.0]
-                                                 [(/ (- (* sy1 s22) (* s12 sy2)) det) (/ (- (* s11 sy2) (* s12 sy1)) det)])
-                                       model (mapv (fn [bb ss oo] (+ bb (* b ss) (* g oo))) B S O)
-                                       sse (reduce + (map #(let [d (- %1 %2)] (* d d)) tin model))]
-                                   {:a a :b b :g g :sse sse})
-                                 (recur (inc k)
-                                        (+ (* al tb) (* a (nth tout k)))
-                                        (+ (* al ts) (nth sol k))
-                                        (+ (* al to) 1.0)
-                                        (conj B tb) (conj S ts) (conj O to))))))
+                             (loop [k 0 tb (double (first tin)) sse 0.0]
+                               (if (= k n) {:a a :sse sse}
+                                   (let [e (- (nth tin k) tb)]
+                                     (recur (inc k) (+ (* al tb) (* a (nth tout k))) (+ sse (* e e))))))))
                   grid (map #(Math/exp %)
                             (map #(+ (Math/log 0.001) (* % (/ (- (Math/log 0.06) (Math/log 0.001)) 100.0))) (range 101)))
-                  {:keys [a b g sse]} (apply min-key :sse (map eval-a grid))
+                  {:keys [a sse]} (apply min-key :sse (map eval-a grid))
                   r2 (if (pos? sst) (- 1.0 (/ sse sst)) 0.0)
                   back (vec (reverse
                              (reduce (fn [acc k]
-                                       (conj acc (/ (- (peek acc) (* a (nth tout (dec k)))
-                                                       (* b (nth sol (dec k))) g)
-                                                    (- 1.0 a))))
+                                       (conj acc (/ (- (peek acc) (* a (nth tout (dec k)))) (- 1.0 a))))
                                      [(double (nth tin (dec n)))]
                                      (range (dec n) 0 -1))))
                   tau-h (/ 1.0 a) tau-d (/ tau-h 24.0)
@@ -417,7 +406,7 @@
                          :t_damp (when (and h-tin h-tout (pos? (:amp h-tin))) (/ (:amp h-tout) (:amp h-tin)))
                          :t_lag  (when (and h-tin h-tout) (mod (- (:phase h-tin) (:phase h-tout)) 24.0))
                          :rh_damp (when (and h-rhin h-rhout (pos? (:amp h-rhin))) (/ (:amp h-rhout) (:amp h-rhin)))}]
-              {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate :a a :b b :g g
+              {:tau-d tau-d :r2 r2 :wk wk :c-mj c-mj-estimate :a a
                :tau-daily tau-daily :damp damp :a-in a-in :a-out a-out :xcorr xcorr
                :acf-in acf-in :acf-out acf-out :daily daily
                :back (zipmap hrs back)})))))
@@ -437,27 +426,16 @@
   [tm arch]
   (when (and tm (:a tm))
     (try
-      (let [{:keys [a b g]} tm
-            rows (archive->rows arch)
-            in-rows (filter :t_in rows)
-            last-in (last in-rows)]
+      (let [a (:a tm)
+            last-in (last (filter :t_in (archive->rows arch)))]
         (when last-in
           (let [e0 (:e last-in) t0 (double (:t_in last-in))
-                om (into {} (map (fn [r] [(:e r) r]) rows))
-                ;; g so korrigieren, dass die Prognose-Anfangssteigung = zuletzt beobachtete Steigung
-                ;; (~letzte 8 h) -> C1-stetiger Anschluss, kein Knick durch historisch verzerrtes g.
-                prev (last (filter #(<= (:e %) (- e0 (* 8 3600))) in-rows))
-                obs-slope (when (and prev (> (:e prev) 0)) (/ (- t0 (:t_in prev)) (/ (- e0 (:e prev)) 3600.0)))
-                tout0 (get-in om [e0 :t_out]) solar0 (or (get-in om [e0 :solar]) 0.0)
-                model-slope (when tout0 (+ (* a (- tout0 t0)) (* b solar0) g))
-                g-eff (if (and obs-slope model-slope (< (Math/abs (double obs-slope)) 2.0))
-                        (+ g (- obs-slope model-slope)) g)
                 fut (take 120 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
             (when (seq fut)
               (loop [fs fut tprev t0 acc []]
                 (if (empty? fs) acc   ;; vorwaerts (aufsteigende Zeit)
                     (let [f (first fs)
-                          tn (+ tprev (* a (- (:t_out f) tprev)) (* b (:solar f)) g-eff)]
+                          tn (+ tprev (* a (- (:t_out f) tprev)))]   ;; rein: dT/dt = a*(Tout - T)
                       (recur (rest fs) tn (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})))))))))
       (catch Exception e (println "[aqua] forecast Fehler:" (.getMessage e)) nil))))
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0
+- Modell-Korrektur: reines Leitungsmodell dT/dt = (1/tau)(Taussen - Tinnen), OHNE konstanten
+  Term g (und ohne g-Korrektur). g war unphysikalisch (Dauer-Abkuehlung ohne Gleichgewicht) und
+  machte tau fensterabhaengig (8 vs 19 d) und die Prognose falsch (Innen fiel trotz steigendem Aussen).
+  Jetzt: tau robust (~7-8 d ueber Fenster), Prognose physikalisch beschraenkt (laeuft zur Aussentemp).
+
 ## 0.10.3
 - Prognose schliesst jetzt C1-stetig an (kein Steigungs-Knick): g wird so korrigiert, dass
   die Anfangssteigung der zuletzt beobachteten entspricht (statt historisch verzerrtem g-Drift).
