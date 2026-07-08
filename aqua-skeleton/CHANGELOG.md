@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.11.20
+- Titel korrigiert: "14-Tage-Prognose" (war noch 5).
+
 ## 0.11.19
 - Kacheln Frostwaechter + Waermebedarf nach ganz oben (eigene Reihe unter dem Kopf).
 - Prognose-"+N Tage"-Kachel entfernt (ueberfluessig).
