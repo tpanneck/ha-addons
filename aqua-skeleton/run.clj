@@ -555,17 +555,24 @@
                          (when (seq ps) (pearson (mapv first ps) (mapv second ps)))))
         corr {:t_rh (pr :t_in :rh_in) :t_q (pr :t_in q-of) :tout_tin (pr :t_out :t_in)
               :rh_in_out (pr :rh_in :rh_out)}
-        ;; Klima-Stil: pro Kanal ALLE einzelnen Tageskurven (24 h, ECHTE Messwerte), jede um ihren
-        ;; Tagesmittel auf 0 zentriert -> uebereinandergelegt zeigen sie die echte Streuung, die typische
-        ;; Form und wann der Peak clustert. KEINE Modell-Rekonstruktion, nur Daten.
+        ;; Klima-Stil: pro Kanal ALLE einzelnen Tageskurven (24 h, ECHTE Messwerte), uebereinandergelegt.
+        ;; Trend inkl. Innerhalb-Tag-Slope RAUS per HOCHPASS: zentrierten 24h-Mittel je Punkt abziehen.
+        ;; 24 h = eine volle Tagesperiode -> das 24h-Mittel des Tageszyklus ist 0, der Zyklus bleibt also
+        ;; erhalten, nur die langsame Drift (und ihr Slope im Tag) verschwindet -> Kurven kippen nicht mehr.
+        ;; (36 h waere falsch: kein Vielfaches der Periode -> wuerde den Zyklus teils mit wegmitteln.)
         daily-of (fn [field]
-                   (let [by-day (group-by #(quot (:e %) 86400) (filter #(some? (field %)) s))]
+                   (let [pts (->> s (filter #(some? (field %))) (sort-by :e) vec)
+                         n (count pts) vals (mapv field pts)
+                         anom (mapv (fn [i] (let [lo (max 0 (- i 12)) hi (min (dec n) (+ i 12))
+                                                  w (subvec vals lo (inc hi))]
+                                              (- (nth vals i) (/ (reduce + w) (double (count w)))))) (range n))
+                         by-day (group-by (fn [i] (quot (:e (nth pts i)) 86400)) (range n))]
                      (->> (sort (keys by-day))
                           (keep (fn [d]
-                                  (let [byh (into {} (map (fn [r] [(mod (quot (:e r) 3600) 24) (field r)]) (by-day d)))]
+                                  (let [is (by-day d)
+                                        byh (into {} (map (fn [i] [(mod (quot (:e (nth pts i)) 3600) 24) (nth anom i)]) is))]
                                     (when (>= (count byh) 20)   ;; nur weitgehend volle Tage
-                                      (let [vs (vals byh) m (/ (reduce + vs) (double (count vs)))]
-                                        (mapv (fn [h] (when-let [v (byh h)] (- v m))) (range 24)))))))
+                                      (mapv (fn [h] (byh h)) (range 24))))))
                           vec)))
         daily-curves {:t_in (daily-of :t_in) :t_out (daily-of :t_out)
                       :rh_in (daily-of :rh_in) :rh_out (daily-of :rh_out)}]
@@ -608,7 +615,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.13")
+(def build-version "0.11.14")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})

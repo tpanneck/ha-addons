@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.14
+- Tagesgang-Charts: Trend-Artefakt entfernt. Zentrieren auf den Tagesmittel liess den Slope INNERHALB
+  des Tages stehen -> bei fallendem Trend kippten alle Kurven. Jetzt Hochpass: zentrierten 24h-Mittel
+  je Punkt abziehen (24h = 1 Periode -> Tageszyklus bleibt erhalten, nur Drift+Slope weg). Gemessen:
+  T_innen-Kipp 0.68 -> ~0, echte Aussen-Zyklen unveraendert. (24h/48h korrekt, 36h wuerde Zyklus daempfen.)
+
 ## 0.11.13
 - Tagesprofil komplett neu (Klima-Stil), weil die harmonische Rekonstruktion Modell war, nicht Messung:
   Jetzt pro Kanal ALLE einzelnen Tageskurven (24 h, echte Werte) einzeln, jede um ihren Tagesmittel
