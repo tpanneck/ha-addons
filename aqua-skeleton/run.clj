@@ -423,29 +423,31 @@
            (remove nil?) (sort-by :e) vec))))
 
 (defn forecast-series
-  "RC-Modell vorwaerts integriert ab der letzten Messung ueber den Open-Meteo-Forecast (max 5 Tage)."
+  "RC vorwaerts ab dem letzten INNEN-Messwert: erst ueber die gemessene Aussentemp der
+   (evtl. mehrstuendigen) Sensor-Luecke, dann ueber den Open-Meteo-Forecast. Erster Punkt liegt
+   eine Stunde nach dem letzten Messwert und wird aus genau diesem integriert -> lueckenloser,
+   stundengenauer Anschluss, kein Sprung. Die Anzeige wird passend bis e0 beschnitten (build-response)."
   [tm arch]
   (when (and tm (:a tm))
     (try
       (let [a (:a tm)
             rows (archive->rows arch)
-            last-in (last (filter :t_in rows))
-            e-arch (:e (last rows))]     ;; letzter GEPLOTTETER Archiv-Punkt (Aussen reicht weiter als Innen)
-        (when (and last-in e-arch)
+            last-in (last (filter :t_in rows))]
+        (when last-in
           (let [e0 (:e last-in) t0 (double (:t_in last-in))
-                ;; ab letzter Innen-Messung integrieren (State ueber die Sparse-Luecke propagieren),
-                ;; aber nur Punkte NACH dem Archiv-Ende ausgeben -> xall bleibt streng monoton,
-                ;; kein Rueckwaerts-Strich mehr im Chart (der Forecast begann sonst bei heute 00:00).
-                fut (take 130 (filter #(> (:e %) e0) (or (forecast-outdoor) [])))]
-            (when (seq fut)
-              (loop [fs fut tprev t0 acc []]
+                emax (:e (last rows))
+                ;; gemessene Aussentemp NACH dem letzten Innen-Messwert (Bruecke ueber die Sensor-Luecke)
+                gap (->> rows (filter #(and (> (:e %) e0) (some? (:t_out %))))
+                         (map (fn [r] {:e (:e r) :t_out (:t_out r)})))
+                ;; danach der echte Forecast (Stunden nach dem Archivende)
+                fut (filter #(> (:e %) emax) (or (forecast-outdoor) []))
+                timeline (take 160 (concat gap fut))]
+            (when (seq timeline)
+              (loop [fs timeline tprev t0 acc []]
                 (if (empty? fs) acc   ;; vorwaerts (aufsteigende Zeit)
                     (let [f (first fs)
                           tn (+ tprev (* a (- (:t_out f) tprev)))]   ;; rein: dT/dt = a*(Tout - T)
-                      (recur (rest fs) tn
-                             (if (> (:e f) e-arch)
-                               (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})
-                               acc)))))))))
+                      (recur (rest fs) tn (conj acc {:e (:e f) :t_in tn :t_out (:t_out f)})))))))))
       (catch Exception e (println "[aqua] forecast Fehler:" (.getMessage e)) nil))))
 
 ;; ---------- State / Loop ----------
@@ -474,11 +476,16 @@
         cutoff (when (and days (pos? days) maxe) (- maxe (* days 86400)))
         rows (if cutoff (filterv #(>= (:e %) cutoff) rows-all) rows-all)
         warch (if cutoff (into {} (filter #(when-let [e (hour->epoch (key %))] (>= e cutoff)) arch)) arch)
-        s (attach-model rows nil)
-        tm (thermal-model warch)
-        fc (forecast-series tm warch)
+        s0 (attach-model rows nil)
         in-eps (->> rows (filter :t_in) (map :e) sort)
         n-in (count in-eps)
+        e0 (when (seq in-eps) (last in-eps))   ;; letzter Innen-Messwert
+        ;; Anzeige bis e0 beschneiden -> die Prognose setzt genau dort an (der Aussen-Sensor reicht
+        ;; sonst Stunden weiter, was Luecke + Sprung erzeugte). Kein Korrelations-Verlust: die
+        ;; abgeschnittenen Tail-Stunden haben ohnehin kein t_in/rh_in.
+        s (if e0 (filterv #(<= (:e %) e0) s0) s0)
+        tm (thermal-model warch)
+        fc (forecast-series tm warch)
         span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))
         ;; Korrelationen (nur Stunden mit beiden Werten)
         q-of (fn [r] (abs-hum (:t_in r) (:rh_in r)))

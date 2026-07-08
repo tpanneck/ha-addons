@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.2
+- FIX Prognose-Anschluss: setzte erst nach dem letzten AUSSEN-Archivpunkt an, der Innensensor
+  ist aber sparse (im Test 25 h aelter) -> sichtbare Luecke + vor-integrierter Sprung (-0.65 C).
+  Jetzt startet die Prognose stundengenau am letzten INNEN-Messwert und laeuft lueckenlos: erst
+  ueber die gemessene Aussentemp der Sensor-Luecke (Nowcast), dann ueber den Open-Meteo-Forecast.
+  Anzeige wird bis zum letzten Innen-Messwert beschnitten -> x-Achse monoton, Anschluss-Sprung ~0.
+
 ## 0.11.1
 - FIX Chart-Glitch: Prognose begann bei heute 00:00 (Open-Meteo past_days=0), also VOR dem letzten
   Archiv-Punkt (Aussen reicht weiter als der sparse Innensensor) -> xall nicht monoton -> uPlot zog
