@@ -477,12 +477,39 @@
 
 (defn refresh! []
   (println "[aqua] Archiv-Update laeuft...")
-  ;; Modell bewusst GEPARKT (im Sommer nicht identifizierbar) - nur Daten laden + zeigen.
   (let [arch (build-archive)
-        tm (thermal-model arch)]
+        tm (thermal-model arch)
+        ;; Wetter-Lueckenpruefung: fehlen Stundenwerte (t_out) im erwarteten Fenster bis JETZT?
+        now-e (-> (java.time.Instant/now) (.atZone java.time.ZoneOffset/UTC)
+                  (.truncatedTo java.time.temporal.ChronoUnit/HOURS) .toEpochSecond)
+        have (into #{} (keep (fn [[ts v]] (when (some? (:t_out v)) (hour->epoch ts))) arch))
+        missing (->> (range (- now-e (* history-days 86400)) (inc now-e) 3600) (remove have) sort)]
     (reset! state {:status "ok" :archive arch :updated (str (java.time.OffsetDateTime/now))})
+    (when (seq missing)
+      (println (format "[aqua] WARN Wetter-Luecken: %d fehlende Stundenwerte, neueste fehlende %s"
+                       (count missing)
+                       (subs (str (java.time.Instant/ofEpochSecond (last missing))) 0 16))))
     (println (str "[aqua] fertig: " (count arch) " Std Archiv"
                   (when tm (format "; tau=%.1f d, W/K=%.0f, R2=%.3f" (:tau-d tm) (:wk tm) (:r2 tm)))))))
+
+(defn densify-field
+  "Fuellt `field` (z.B. :t_in) fuer JEDE Stunde in `rows`: linear zwischen den bekannten Messpunkten,
+   nach der letzten Messung Wert halten (Sensor aktiv, Temp unveraendert) bis max `hold-h` Stunden,
+   VOR der ersten Messung nichts erfinden. Ergebnis: jede Stunde hat einen Wert (kein Loch mehr)."
+  [rows field hold-h]
+  (let [known (->> rows (keep (fn [r] (when (some? (field r)) [(:e r) (double (field r))])))
+                   (sort-by first) vec)]
+    (if (< (count known) 2) rows
+        (let [e0 (ffirst known) eN (first (peek known)) vN (second (peek known))
+              cap (+ eN (* hold-h 3600))]
+          (mapv (fn [r]
+                  (let [e (:e r)]
+                    (cond (some? (field r)) r                      ;; echte Messung bleibt
+                          (< e e0) r                               ;; vor erster Messung: nichts erfinden
+                          (<= e eN) (assoc r field (interp-at known e))  ;; dazwischen: interpolieren
+                          (<= e cap) (assoc r field vN)            ;; nach letzter: halten (bis hold-h)
+                          :else r)))
+                rows)))))
 
 ;; ---------- Web ----------
 (defn parse-days [qs]
@@ -501,7 +528,10 @@
         ;; VOLLES Archiv zeigen (Aussen bis jetzt) - NICHT mehr auf den letzten Innen-Messwert
         ;; beschneiden. Der Innen-Sensor ist sparse; die Prognose/Nowcast-Linie ueberbrueckt die
         ;; Luecke [letzter Innen-Messwert .. jetzt] im Frontend als Overlay (kein Anzeige-Verlust).
-        s (attach-model rows nil)
+        ;; JEDE Stunde einen Wert: sparse Innen-Messungen verdichten + Aussen-Luecken interpolieren.
+        s (-> (attach-model rows nil)
+              (densify-field :t_in 24) (densify-field :rh_in 24)
+              (densify-field :t_out 3) (densify-field :rh_out 3))
         in-eps (->> rows (filter :t_in) (map :e) sort)
         n-in (count in-eps)
         tm (thermal-model warch)

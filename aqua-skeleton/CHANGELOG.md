@@ -1,6 +1,16 @@
 # Changelog
 
 ## 0.11.8
+- Stuendliche Verdichtung ALLER Reihen: sparse Innen-Messungen (Shelly sendet nur bei Aenderung)
+  werden zwischen den echten Punkten linear interpoliert und nach der letzten gehalten -> JEDE
+  Stunde hat einen Wert (an echten Daten geprueft: 9 sparse -> 58/58 Stunden). Gleiches fuer Aussen.
+- Wetter-Lueckenpruefung bei jedem Refresh: loggt fehlende Stundenwerte + neueste fehlende Stunde
+  ("[aqua] WARN Wetter-Luecken: N ... neueste fehlende <ts>") -> zeigt sofort, ob Wetter bis jetzt reicht.
+- Log druckt die echte Build-Version ("[aqua] BUILD 0.11.8 ...") statt Hardcode "v0.3" -> Update
+  beweisbar gelandet.
+- Buendelt die vorherigen Anzeige-Fixes: kein Trim, Innen-Overlay/Nowcast, Tail-Forward-Fill.
+
+## 0.11.8
 - Log druckt jetzt die ECHTE Build-Version ("[aqua] BUILD 0.11.8 ...") statt des alten Hardcodes
   "v0.3" -> ob ein Update wirklich auf der Box gelandet ist, ist damit im Log beweisbar.
   (Enthaelt alle Fixes: kein Anzeige-Trim, Innen-Overlay/Nowcast, Forward-Fill des sparsen Sensors.)
