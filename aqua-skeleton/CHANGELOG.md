@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.9
+- BUGFIX (Ursache "endet morgens mit 14.7 Grad"): outdoor-hourly zog per forecast_days=1 den REST
+  des heutigen Tages als FORECAST mit in die "gemessene" Aussenkurve -> letzte Zeile war 23:00 UTC
+  (= 01:00 CEST, Nacht) und die Karte "Aussen T" zeigte diesen Nacht-Forecast statt jetzt. Jetzt
+  wird Aussen auf die AKTUELLE Stunde beschnitten; Zukunft nur noch in der Prognose-Linie.
+- NEU Sektion 0 "Daten-Trace": Tabelle der letzten Roh-Archivzeilen (Zeit UTC + lokal, Innen, Aussen,
+  RH) + Server-Zeit + Anzeige-Ende. Macht sofort sichtbar, bis wann Daten reichen und wo Loecher sind.
+
 ## 0.11.8
 - Stuendliche Verdichtung ALLER Reihen: sparse Innen-Messungen (Shelly sendet nur bei Aenderung)
   werden zwischen den echten Punkten linear interpoliert und nach der letzten gehalten -> JEDE

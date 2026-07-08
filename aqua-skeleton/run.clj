@@ -176,8 +176,14 @@
   []
   (let [u (str "https://api.open-meteo.com/v1/forecast?latitude=" lat "&longitude=" lon
                "&hourly=temperature_2m,shortwave_radiation,wind_speed_10m,relative_humidity_2m"
-               "&past_days=" (min 92 history-days) "&forecast_days=1&timezone=UTC")]
-    (or (parse-hourly (:hourly (om-get u))) {})))
+               "&past_days=" (min 92 history-days) "&forecast_days=1&timezone=UTC")
+        now-h (-> (java.time.Instant/now) (.atZone java.time.ZoneOffset/UTC)
+                  (.truncatedTo java.time.temporal.ChronoUnit/HOURS) .toEpochSecond)]
+    ;; NUR bis zur aktuellen Stunde behalten. Open-Meteo liefert mit forecast_days=1 den REST des
+    ;; heutigen Tages als Forecast mit - der darf NICHT in die "gemessene" Aussenkurve (sonst endet
+    ;; sie in der Nacht/naechsten Frueh statt jetzt). Die Zukunft kommt aus der separaten Prognose.
+    (into {} (filter (fn [[ts _]] (when-let [e (hour->epoch ts)] (<= e now-h)))
+                     (or (parse-hourly (:hourly (om-get u))) {})))))
 
 ;; ---------- Psychrometrie (Magnus) ----------
 (defn abs-hum [t rh]   ;; absolute Feuchte [g/m3]
@@ -565,6 +571,12 @@
        :forecast (when (seq fc) {:time (mapv :e fc) :t_in (mapv :t_in fc) :t_out (mapv :t_out fc)})
        :indoor_hours n-in :indoor_span_days span-d :days days
        :updated (:updated @state) :status (:status @state)
+       ;; TRACE: die letzten ROHEN Archivzeilen (t_in/t_out/Zeitstempel) + Server-Zeit, damit man
+       ;; in der UI direkt sieht, bis wann Daten reichen und wo Loecher sind.
+       :trace {:now (str (java.time.Instant/now))
+               :display_last (when (seq s) (:e (last s)))
+               :raw_last (->> rows-all (sort-by :e) (take-last 20)
+                              (mapv (fn [r] {:ts (:ts r) :t_in (:t_in r) :t_out (:t_out r) :rh_in (:rh_in r)})))}
        :ha_debug @ha-debug :sensors @entities})))
 
 (defn read-web [f ct]
@@ -582,7 +594,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.8")
+(def build-version "0.11.9")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})

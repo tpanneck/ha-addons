@@ -30,6 +30,13 @@
   </div>
   <div id="hadbg" class="muted" style="font-size:.78rem"></div>
 
+  <div class="section" id="traceSec">
+    <h2>0 · Daten-Trace (letzte Archivzeilen)</h2>
+    <p class="expl">Rohdaten direkt aus dem Archiv (CSV): bis wann reichen Messung + Wetter, wo sind Löcher.
+       Zeit in UTC <b>und</b> lokal, damit die Zeitachse eindeutig ist.</p>
+    <div id="traceBox" style="font-size:.82rem"></div>
+  </div>
+
   <div class="section">
     <h2>1 · Temperatur (+ 5-Tage-Prognose)</h2>
     <p class="expl">Innen (gemessen) vs. Außen, die <b>gefittete Modell-Kurve</b> (Vorwärts-Freilauf, minimiert
@@ -103,6 +110,22 @@
       if(d.status!=="ok"){ document.getElementById("status").textContent="Status: "+(d.status||"?")+" — erster Abruf läuft, in ~20 s neu laden."; return; }
       if(!d.time||!d.time.length){ document.getElementById("status").textContent="ok — keine Daten im Archiv."; return; }
       document.getElementById("status").textContent="Stand: "+(d.updated||"–");
+      // 0 Daten-Trace: rohe letzte Archivzeilen + Server-Zeit, UTC UND lokal (macht die Zeitachse eindeutig)
+      if(d.trace){
+        const tr=d.trace;
+        const utc=e=>new Date(e*1000).toISOString().slice(0,16).replace("T"," ");
+        const loc=e=>new Date(e*1000).toLocaleString();
+        const nowE=Math.floor(new Date((tr.now||"").slice(0,19)+"Z").getTime()/1000)||0;
+        const rows=(tr.raw_last||[]).slice().reverse().map(r=>{
+          const e=Math.floor(new Date(r.ts+"Z").getTime()/1000);
+          return `<tr><td><code>${r.ts}</code></td><td>${loc(e)}</td><td>${r.t_in??"—"}</td><td>${r.t_out??"—"}</td><td>${r.rh_in??"—"}</td></tr>`;
+        }).join("");
+        document.getElementById("traceBox").innerHTML =
+          `<div class="muted">Server jetzt: <b>${utc(nowE)} UTC</b> = ${loc(nowE)} lokal`
+          + ` · Anzeige reicht bis: <b>${tr.display_last?utc(tr.display_last)+" UTC":"—"}</b>`
+          + `${tr.display_last?" = "+loc(tr.display_last)+" lokal":""}</div>`
+          + `<table><tr><th>Zeit (UTC)</th><th>Zeit (lokal)</th><th>Innen °C</th><th>Außen °C</th><th>RH innen %</th></tr>${rows}</table>`;
+      }
       const t=d.thermal||{}, c=d.corr||{}, nul=d.time.map(()=>null);
 
       // 1 Temperatur: Messung (Außen bis jetzt) + Innen-Prognose als Overlay, das die (evtl. lange)
