@@ -615,7 +615,7 @@
     {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"} :body index-html}))
 
 ;; MIT config.yaml version synchron halten! Das Log druckt sie -> Update-Landung ist beweisbar.
-(def build-version "0.11.14")
+(def build-version "0.11.15")
 
 (defn -main [& _]
   (http/run-server handler {:port port :ip "0.0.0.0"})

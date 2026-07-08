@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.15
+- Tages-Analyse-Tabelle: "Max (h UTC)" war falsch (harmonic-fit-Phase relativ zum Fensteranfang, nicht
+  UTC) -> z.B. T_aussen-Max faelschlich 19h statt nachmittags. Jetzt "Max (lokal)" + Tagesgang
+  (Spitze-Spitze) direkt aus der gezeichneten Mittelkurve abgeleitet -> konsistent mit dem Chart.
+  Daempfung + Lag bleiben (harmonisch, robust - als Verhaeltnis/Differenz offset-unabhaengig, korrekt).
+
 ## 0.11.14
 - Tagesgang-Charts: Trend-Artefakt entfernt. Zentrieren auf den Tagesmittel liess den Slope INNERHALB
   des Tages stehen -> bei fallendem Trend kippten alle Kurven. Jetzt Hochpass: zentrierten 24h-Mittel
