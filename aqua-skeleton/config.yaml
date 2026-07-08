@@ -2,7 +2,7 @@
 # Mit "image:" zieht HA ein VORGEBAUTES Image aus ghcr.io (kein lokaler Build,
 # kein Docker-Hub-Rate-Limit) - gebaut von der GitHub-Action .github/workflows/build.yml.
 name: "Aqua Skeleton"
-version: "0.11.5"
+version: "0.11.6"
 slug: "aqua_skeleton"
 image: "ghcr.io/tpanneck/{arch}-aqua_skeleton"
 description: "Thermischer Daten-Monitor: Innen (HA) + Aussen/Sonne/Wind (Open-Meteo), Archiv in /share"

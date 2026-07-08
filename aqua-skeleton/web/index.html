@@ -105,29 +105,41 @@
       document.getElementById("status").textContent="Stand: "+(d.updated||"–");
       const t=d.thermal||{}, c=d.corr||{}, nul=d.time.map(()=>null);
 
-      // 1 Temperatur (+ Prognose Innen & Außen)
+      // 1 Temperatur: Messung (Außen bis jetzt) + Innen-Prognose als Overlay, das die (evtl. lange)
+      // Innen-Sensor-Lücke [letzter Messwert .. jetzt] als Nowcast überbrückt und in die Zukunft läuft.
       const fc=d.forecast||{time:[],t_in:[],t_out:[]};
-      const nP=d.time.length, nF=fc.time.length;
-      const padF=Array(nF).fill(null), padP=Array(nP).fill(null);
-      const xall=d.time.concat(fc.time);
-      const tinP=d.t_in.concat(padF);
-      const toutP=d.t_out.concat(padF);
-      const backA=(d.t_model||nul).concat(padF);
-      const fcIn=padP.concat(fc.t_in);   if(nF&&nP) fcIn[nP-1]=lastNN(d.t_in);
-      const fcOut=padP.concat(fc.t_out); if(nF&&nP) fcOut[nP-1]=lastNN(d.t_out);
-      // Geglättete Außen-Trendlinie über Messung UND Prognose (durchgehend, kein Sprung an "jetzt").
-      // Zentrierter 24h-Mittelwert (±12h) killt den Tagesgang -> zeigt das "effektive" Außen,
-      // dem die träge Innentemperatur (Tiefpass ~τ) folgt -> Kopplung visuell abschätzbar.
-      const outAll = xall.map((_,i)=> i<nP ? d.t_out[i] : fc.t_out[i-nP]);
+      const nP=d.time.length;
+      const lastArch = nP? d.time[nP-1] : 0;
+      // Prognose-Zeitstempel JENSEITS des Archivendes = echte Zukunft -> anhängen. Die davor liegenden
+      // Prognosepunkte sind der Nowcast über die Innen-Lücke und werden auf die Archiv-Achse gemappt.
+      const futT = fc.time.filter(t=>t>lastArch);
+      const xall = d.time.concat(futT);
+      const padFut = Array(futT.length).fill(null);
+      const tinP  = d.t_in.concat(padFut);
+      const toutP = d.t_out.concat(padFut);
+      const backA = (d.t_model||nul).concat(padFut);
+      const fcMapI={}, fcMapO={};
+      for(let i=0;i<fc.time.length;i++){ fcMapI[fc.time[i]]=fc.t_in[i]; fcMapO[fc.time[i]]=fc.t_out[i]; }
+      let li=-1; for(let i=0;i<nP;i++) if(d.t_in[i]!=null) li=i;   // Index letzter Innen-Messwert
+      // Innen-Prognose: Lücke (Nowcast) + Zukunft; am letzten Messwert ankern -> nahtlos.
+      const fcIn = xall.map(t=> (t in fcMapI)? fcMapI[t] : null);
+      if(li>=0) fcIn[li]=d.t_in[li];
+      // Außen-Prognose nur für die Zukunft (Messung deckt bis jetzt ab); am Archivende ankern.
+      const fcOut = xall.map((t,i)=> (i>=nP && (t in fcMapO))? fcMapO[t] : null);
+      if(nP) fcOut[nP-1]=lastNN(d.t_out);
+      // Geglättete Außen-Trendlinie: gemessenes Außen (bis jetzt) + Prognose-Außen (Zukunft), durchgehend.
+      const outAll = xall.map((t,i)=> i<nP ? d.t_out[i] : ((t in fcMapO)? fcMapO[t] : null));
       const smooth=(arr,half)=>arr.map((_,i)=>{let s=0,c=0,lo=Math.max(0,i-half),hi=Math.min(arr.length-1,i+half);for(let j=lo;j<=hi;j++){const v=arr[j];if(v!=null){s+=v;c++;}}return c?s/c:null;});
       const outTrend = smooth(outAll,12);
+      const nFut=futT.length;
+      const ageH = li>=0? Math.round((lastArch-d.time[li])/3600) : null;   // Alter letzter Innen-Messwert
       cards("c1cards",[
-        ["Innen T", fmt(lastNN(d.t_in),1)+" °C",""],
+        ["Innen T", fmt(lastNN(d.t_in),1)+" °C", (ageH!=null&&ageH>=2)?("Messung vor "+ageH+" h"):""],
         ["Außen T", fmt(lastNN(d.t_out),1)+" °C",""],
         ["τ Abkling", fmt(t.tau_d,1)+" d", "R²="+fmt(t.r2,3)],
         ["W/K = C/τ", fmt(t.wk,0)+" W/K", "C="+fmt(t.c_mj,0)+" MJ/K"],
-        ["Prognose", nF?("+"+Math.round(nF/24)+" Tage"):"–",
-         nF?("bis "+new Date(fc.time[nF-1]*1000).toLocaleDateString()):"aus Forecast"],
+        ["Prognose", nFut?("+"+Math.round(nFut/24)+" Tage"):"–",
+         nFut?("bis "+new Date(futT[nFut-1]*1000).toLocaleDateString()):"aus Forecast"],
       ]);
       if(charts.c1){ charts.c1.destroy(); delete charts.c1; }  // Neuaufbau -> X-Achse inkl. Zukunft
       chart("c1","c1",{height:340,scales:{x:{time:true},C:{}},

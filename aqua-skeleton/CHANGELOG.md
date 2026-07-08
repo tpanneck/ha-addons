@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.6
+- FIX Anzeige brach beim letzten INNEN-Messwert ab (v0.11.2-Trim) -> bei sparsem Innensensor
+  verschwand die AKTUELLE Aussentemperatur. Jetzt: volles Archiv (Aussen bis jetzt) + Innen-Prognose
+  als Overlay, das die Innen-Luecke [letzter Messwert..jetzt] als Nowcast ueberbrueckt und in die
+  Zukunft laeuft. Neue Kachel-Info "Messung vor X h", wenn der Innensensor gerade schweigt.
+
 ## 0.11.5
 - Linienstaerken angehoben (Handy-Lesbarkeit): Minimum 2 statt 1, Hauptlinien 2.5, Trend 3.
 

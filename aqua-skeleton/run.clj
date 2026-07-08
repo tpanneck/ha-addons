@@ -476,14 +476,12 @@
         cutoff (when (and days (pos? days) maxe) (- maxe (* days 86400)))
         rows (if cutoff (filterv #(>= (:e %) cutoff) rows-all) rows-all)
         warch (if cutoff (into {} (filter #(when-let [e (hour->epoch (key %))] (>= e cutoff)) arch)) arch)
-        s0 (attach-model rows nil)
+        ;; VOLLES Archiv zeigen (Aussen bis jetzt) - NICHT mehr auf den letzten Innen-Messwert
+        ;; beschneiden. Der Innen-Sensor ist sparse; die Prognose/Nowcast-Linie ueberbrueckt die
+        ;; Luecke [letzter Innen-Messwert .. jetzt] im Frontend als Overlay (kein Anzeige-Verlust).
+        s (attach-model rows nil)
         in-eps (->> rows (filter :t_in) (map :e) sort)
         n-in (count in-eps)
-        e0 (when (seq in-eps) (last in-eps))   ;; letzter Innen-Messwert
-        ;; Anzeige bis e0 beschneiden -> die Prognose setzt genau dort an (der Aussen-Sensor reicht
-        ;; sonst Stunden weiter, was Luecke + Sprung erzeugte). Kein Korrelations-Verlust: die
-        ;; abgeschnittenen Tail-Stunden haben ohnehin kein t_in/rh_in.
-        s (if e0 (filterv #(<= (:e %) e0) s0) s0)
         tm (thermal-model warch)
         fc (forecast-series tm warch)
         span-d (when (>= n-in 2) (/ (- (last in-eps) (first in-eps)) 86400.0))
